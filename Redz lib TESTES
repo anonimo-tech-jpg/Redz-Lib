@@ -5830,9 +5830,10 @@ function Tab:AddDropdownPlayer(Configs)
     -- 📐 DIMENSÕES
     local OPTION_HEIGHT = 38
     local OPTION_PADDING = 6
-    local MAX_VISIBLE_OPTIONS = 7        -- ✅ agora mostra 7 opções
-    local SEARCHBOX_HEIGHT = 38          -- altura do searchbox + margens
-    local DROPDOWN_MAX_HEIGHT_RATIO = 0.7 -- ✅ no máximo 70% da tela
+    local MAX_VISIBLE_OPTIONS = 6
+    local SEARCHBOX_HEIGHT = 38
+    local DROPDOWN_MAX_HEIGHT_RATIO = 0.75
+    local DROPDOWN_EXTRA_WIDTH = 40      -- ✅ extende pra esquerda (mais largo)
 
     local wasSearching = false
     local hasAutoSelected = false
@@ -5945,23 +5946,27 @@ function Tab:AddDropdownPlayer(Configs)
         UpdateToggleUI(ClickToggleActive)
     end)
 
-    local NoClickFrame = Create("TextButton", DropdownHolder, {
-        Name = "AntiClick",
+    -- ✅ Blocker direto no ScreenGui (não em Folder) — assim não é limitado
+    local NoClickFrame = Create("TextButton", ScreenGui, {
+        Name = "DropdownBlocker_" .. tostring(math.random(100000, 999999)),
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
         Visible = false,
-        Text = ""
+        Text = "",
+        ZIndex = 50
     })
 
+    -- ✅ DropFrame também direto no ScreenGui (pai = NoClickFrame, que é filho do ScreenGui)
     local DropFrame = Create("Frame", NoClickFrame, {
-        Size = UDim2.new(0, 150, 0, 0),
+        Size = UDim2.fromOffset(190, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
         AnchorPoint = Vector2.new(0, 0),
         Position = UDim2.new(0, 0, 0, 0),
         Name = "DropdownFrame",
         ClipsDescendants = false,
-        Active = true
+        Active = true,
+        ZIndex = 51
     })
     Make("Corner", DropFrame)
     AddTransparency(DropFrame)
@@ -5972,7 +5977,8 @@ function Tab:AddDropdownPlayer(Configs)
         Name = "SearchBox",
         Size = UDim2.new(1, -16, 0, 26),
         Position = UDim2.new(0, 8, 0, 6),
-        AnchorPoint = Vector2.new(0, 0)
+        AnchorPoint = Vector2.new(0, 0),
+        ZIndex = 52
     })
     Make("Corner", SearchBox, UDim.new(0, 4))
 
@@ -5986,7 +5992,8 @@ function Tab:AddDropdownPlayer(Configs)
         PlaceholderText = "Pesquisar...",
         PlaceholderColor3 = Theme["Color Dark Text"],
         Text = "",
-        TextXAlignment = "Left"
+        TextXAlignment = "Left",
+        ZIndex = 53
     }), "Text")
 
     local ScrollFrame = InsertTheme(Create("ScrollingFrame", DropFrame, {
@@ -6000,7 +6007,8 @@ function Tab:AddDropdownPlayer(Configs)
         ScrollingDirection = "Y",
         AutomaticCanvasSize = "Y",
         Active = true,
-        ClipsDescendants = true
+        ClipsDescendants = true,
+        ZIndex = 52
     }, {
         Create("UIPadding", {
             PaddingLeft = UDim.new(0, 6),
@@ -6017,30 +6025,29 @@ function Tab:AddDropdownPlayer(Configs)
     local ScrollSize = 5
     local WaitClick = false
 
-    -- ✅ Calcula a altura necessária para mostrar até MAX_VISIBLE_OPTIONS opções
+    -- ✅ Largura = largura do SelectedFrame + extra pra esquerda
+    local function GetDropdownWidth()
+        return (SelectedFrame.AbsoluteSize.X / UIScale) + DROPDOWN_EXTRA_WIDTH
+    end
+
+    -- ✅ Altura = todas as opções (até 6) + searchbox
     local function GetFrameSize()
         local viewportH = workspace.CurrentCamera.ViewportSize.Y / UIScale
         local maxH = viewportH * DROPDOWN_MAX_HEIGHT_RATIO
         local desiredH = ScrollSize + SEARCHBOX_HEIGHT
-        local finalH = math.min(desiredH, maxH)
-
-        return UDim2.fromOffset(
-            SelectedFrame.AbsoluteSize.X / UIScale,
-            finalH
-        )
+        return UDim2.fromOffset(GetDropdownWidth(), math.min(desiredH, maxH))
     end
 
     local function Disable()
         WaitClick = true
         CreateTween({Arrow, "Rotation", 0, 0.2})
-        CreateTween({DropFrame, "Size", UDim2.new(0, SelectedFrame.AbsoluteSize.X / UIScale, 0, 0), 0.2})
+        CreateTween({DropFrame, "Size", UDim2.fromOffset(GetDropdownWidth(), 0), 0.2})
         CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
         Arrow.Image = "rbxassetid://10709791523"
         NoClickFrame.Visible = false
         WaitClick = false
     end
 
-    -- ✅ CalculateSize: conta as opções visíveis e calcula altura (até 7)
     local function CalculateSize()
         local Count = 0
         for _, Frame in pairs(ScrollFrame:GetChildren()) do
@@ -6048,7 +6055,6 @@ function Tab:AddDropdownPlayer(Configs)
                 Count = Count + 1
             end
         end
-        -- Altura = (min(Count, MAX) * (altura + padding)) + padding extra
         local visibleCount = math.clamp(Count, 1, MAX_VISIBLE_OPTIONS)
         ScrollSize = (visibleCount * OPTION_HEIGHT) + ((visibleCount - 1) * OPTION_PADDING) + 10
         if NoClickFrame.Visible then
@@ -6056,6 +6062,8 @@ function Tab:AddDropdownPlayer(Configs)
         end
     end
 
+    -- ✅ CalculatePos: alinha direita do DropFrame com direita do SelectedFrame
+    -- e estende pra ESQUERDA
     local function CalculatePos()
         local selectedAbsPos = SelectedFrame.AbsolutePosition
         local selectedAbsSize = SelectedFrame.AbsoluteSize
@@ -6066,17 +6074,24 @@ function Tab:AddDropdownPlayer(Configs)
         local selH = selectedAbsSize.Y / UIScale
 
         local screenH = workspace.CurrentCamera.ViewportSize.Y / UIScale
-        local currentH = DropFrame.Size.Y.Offset
 
-        -- ✅ Se não couber embaixo, abre pra cima
+        local dropW = GetDropdownWidth()
+        local dropH = DropFrame.Size.Y.Offset
+        if dropH <= 0 then dropH = ScrollSize + SEARCHBOX_HEIGHT end
+
+        -- ✅ Alinha a DIREITA do dropdown com a DIREITA do SelectedFrame
+        -- assim a esquerda estica pra fora (para a esquerda)
+        local targetX = (selX + selW) - dropW
         local targetY = selY + selH + 2
-        if targetY + currentH > screenH then
-            targetY = selY - currentH - 2
+
+        -- Se não couber embaixo, abre pra cima
+        if targetY + dropH > screenH then
+            targetY = selY - dropH - 2
         end
 
         DropFrame.AnchorPoint = Vector2.new(0, 0)
-        DropFrame.Size = UDim2.fromOffset(selW, currentH)
-        DropFrame.Position = UDim2.fromOffset(selX, targetY)
+        DropFrame.Size = UDim2.fromOffset(dropW, dropH)
+        DropFrame.Position = UDim2.fromOffset(targetX, targetY)
     end
 
     local Options = {}
@@ -6412,7 +6427,7 @@ function Tab:AddDropdownPlayer(Configs)
         if NoClickFrame.Visible then
             Arrow.Image = "rbxassetid://10709791523"
             CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
-            CreateTween({DropFrame, "Size", UDim2.new(0, SelectedFrame.AbsoluteSize.X / UIScale, 0, 0), 0.2})
+            CreateTween({DropFrame, "Size", UDim2.fromOffset(GetDropdownWidth(), 0), 0.2})
             NoClickFrame.Visible = false
         else
             SearchTextBox.Text = ""
@@ -6423,9 +6438,10 @@ function Tab:AddDropdownPlayer(Configs)
             Arrow.Image = "rbxassetid://10709790948"
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
 
+            -- ✅ Ordem correta: size → pos → tween
             CalculateSize()
+            DropFrame.Size = GetFrameSize()
             CalculatePos()
-            CreateTween({DropFrame, "Size", GetFrameSize(), 0.2})
 
             if wasSearching then
                 ScrollToSelected()
@@ -6473,6 +6489,7 @@ function Tab:AddDropdownPlayer(Configs)
         c1:Disconnect()
         c2:Disconnect()
         cClick:Disconnect()
+        NoClickFrame:Destroy()
         Button:Destroy()
     end
     Dropdown.ActiveLabel = ActiveLabel
