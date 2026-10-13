@@ -6055,18 +6055,18 @@ function Tab:AddDropdownPlayer(Configs)
     end
 
     -- ═══════════════════════════════════════════════════════
-    -- CÁLCULO DE POSIÇÃO CORRIGIDO (NÃO SAI MAIS DA TELA)
+    -- CÁLCULO DE POSIÇÃO — ALINHADO À ESQUERDA DO SELECTEDFRAME
     -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
         local FramePos  = SelectedFrame.AbsolutePosition
         local FrameSize = SelectedFrame.AbsoluteSize
         local Viewport  = workspace.CurrentCamera.ViewportSize
 
-        -- Largura real do dropdown em pixels de tela
+        -- Largura/altura do dropdown em pixels de tela
         local DropW = DROPDOWN_WIDTH * UIScale
         local DropH = (ScrollSize + SEARCH_HEIGHT + 14) * UIScale
 
-        -- Posição desejada: abaixo do SelectedFrame
+        -- ✅ ALINHADO À ESQUERDA DO SELECTEDFRAME
         local desiredX = FramePos.X
         local desiredY = FramePos.Y + FrameSize.Y + 2
 
@@ -6084,7 +6084,7 @@ function Tab:AddDropdownPlayer(Configs)
         local maxY = Viewport.Y - DropH - 4
         local clampedY = math.clamp(desiredY, 4, math.max(4, maxY))
 
-        -- Converte pra coordenadas locais do DropdownHolder (que é filho do ScreenGui)
+        -- Converte pra coordenadas locais do DropdownHolder
         local NewPos = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
         local AnchorPoint = goUp and Vector2.new(0, 1) or Vector2.new(0, 0)
 
