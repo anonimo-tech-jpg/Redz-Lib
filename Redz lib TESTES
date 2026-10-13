@@ -5814,12 +5814,20 @@ function Tab:AddDropdownPlayer(Configs)
     local Flag = Configs[5] or Configs.Flag or false
     local Callback = Funcs:GetCallback(Configs, 4)
 
+    -- Permite desativar a seleção automática enviando AutoSelect = false
     local autoSelectEnabled = Configs.AutoSelect
-    if autoSelectEnabled == nil then autoSelectEnabled = true end
+    if autoSelectEnabled == nil then
+        autoSelectEnabled = true
+    end
 
+    -- Configuração do Click Player
     local clickToSelectEnabled = Configs.ClickToSelect
-    if clickToSelectEnabled == nil then clickToSelectEnabled = Configs.ClickPlayer end
-    if clickToSelectEnabled == nil then clickToSelectEnabled = true end
+    if clickToSelectEnabled == nil then
+        clickToSelectEnabled = Configs.ClickPlayer
+    end
+    if clickToSelectEnabled == nil then
+        clickToSelectEnabled = true
+    end
 
     local CustomOptions = Configs.Options or Configs[2]
 
@@ -5827,17 +5835,17 @@ function Tab:AddDropdownPlayer(Configs)
     local UserInputService = game:GetService("UserInputService")
     local LocalPlayer = Players.LocalPlayer
 
-    -- 📐 DIMENSÕES
-    local OPTION_HEIGHT = 38
-    local OPTION_PADDING = 6
-    local MAX_VISIBLE_OPTIONS = 6
-    local SEARCHBOX_HEIGHT = 32
-    local DROPDOWN_WIDTH = 190     -- largura fixa
-    local DROPDOWN_MAX_RATIO = 0.7 -- no máx 70% da tela
-
     local wasSearching = false
     local hasAutoSelected = false
     local suppressInitialNotify = true
+
+    -- ═══════════════════════════════════════════════════════
+    -- DIMENSÕES CONFIGURÁVEIS (FÁCIL DE AJUSTAR)
+    -- ═══════════════════════════════════════════════════════
+    local DROPDOWN_WIDTH    = 210   -- largura do frame de opções (era 152)
+    local OPTION_HEIGHT     = 40    -- altura de cada opção (era 28)
+    local SEARCH_HEIGHT     = 26    -- altura da barra de busca
+    local MAX_VISIBLE_OPTS  = 7     -- máximo de opções visíveis antes de scroll
 
     local Button, LabelFunc = ButtonFrame(Container, DName, DDesc, UDim2.new(1, -180))
 
@@ -5946,50 +5954,33 @@ function Tab:AddDropdownPlayer(Configs)
         UpdateToggleUI(ClickToggleActive)
     end)
 
-    -- ═══════════════════════════════════════════════════════════
-    -- DROPDOWN: criado direto no ScreenGui com ZIndex alto
-    -- ═══════════════════════════════════════════════════════════
-    local DropdownRoot = Create("Frame", ScreenGui, {
-        Name = "DropdownRoot_" .. tostring(math.random(100000, 999999)),
+    local NoClickFrame = Create("TextButton", DropdownHolder, {
+        Name = "AntiClick",
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
         Visible = false,
-        Active = false,
-        ZIndex = 500
-    })
-
-    local NoClickFrame = Create("TextButton", DropdownRoot, {
-        Name = "Blocker",
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "",
-        AutoButtonColor = false,
-        ZIndex = 501
+        Text = ""
     })
 
     local DropFrame = Create("Frame", NoClickFrame, {
-        Size = UDim2.fromOffset(DROPDOWN_WIDTH, 0),
+        Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0),
         BackgroundTransparency = 0.1,
-        BackgroundColor3 = Color3.fromRGB(40, 40, 50),
-        AnchorPoint = Vector2.new(0, 0),
-        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        AnchorPoint = Vector2.new(0, 1),
         Name = "DropdownFrame",
         ClipsDescendants = true,
-        Active = true,
-        ZIndex = 502
+        Active = true
     })
     Make("Corner", DropFrame)
     AddTransparency(DropFrame)
     Make("Stroke", DropFrame)
     Make("Gradient", DropFrame, { Rotation = 60 })
 
-    -- SearchBox
     local SearchBox = Make("Button", DropFrame, {
         Name = "SearchBox",
-        Size = UDim2.new(1, -16, 0, 26),
-        Position = UDim2.new(0, 8, 0, 3),
-        AnchorPoint = Vector2.new(0, 0),
-        ZIndex = 503
+        Size = UDim2.new(1, -16, 0, SEARCH_HEIGHT),
+        Position = UDim2.new(0, 8, 0, 6),
+        AnchorPoint = Vector2.new(0, 0)
     })
     Make("Corner", SearchBox, UDim.new(0, 4))
 
@@ -6003,101 +5994,102 @@ function Tab:AddDropdownPlayer(Configs)
         PlaceholderText = "Pesquisar...",
         PlaceholderColor3 = Theme["Color Dark Text"],
         Text = "",
-        TextXAlignment = "Left",
-        ZIndex = 504
+        TextXAlignment = "Left"
     }), "Text")
 
-    -- ScrollFrame com SIZE ABSOLUTO (calculado)
     local ScrollFrame = InsertTheme(Create("ScrollingFrame", DropFrame, {
         ScrollBarImageColor3 = Theme["Color Theme"],
-        Size = UDim2.new(1, 0, 0, 100),  -- será ajustado
-        Position = UDim2.new(0, 0, 0, SEARCHBOX_HEIGHT),
-        ScrollBarThickness = 2,
+        Size = UDim2.new(1, 0, 1, -(SEARCH_HEIGHT + 12)),
+        Position = UDim2.new(0, 0, 0, SEARCH_HEIGHT + 8),
+        ScrollBarThickness = 1.5,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         CanvasSize = UDim2.new(),
         ScrollingDirection = "Y",
         AutomaticCanvasSize = "Y",
-        Active = true,
-        ClipsDescendants = true,
-        ZIndex = 503
+        Active = true
     }, {
         Create("UIPadding", {
-            PaddingLeft = UDim.new(0, 6),
-            PaddingRight = UDim.new(0, 6),
+            PaddingLeft = UDim.new(0, 8),
+            PaddingRight = UDim.new(0, 8),
             PaddingTop = UDim.new(0, 4),
             PaddingBottom = UDim.new(0, 6)
         }),
-        Create("UIListLayout", { 
-            Padding = UDim.new(0, OPTION_PADDING), 
-            SortOrder = Enum.SortOrder.LayoutOrder 
-        })
+        Create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder })
     }), "ScrollBar")
 
-    local ScrollSize = 0
-    local WaitClick = false
+    local ScrollSize, WaitClick = 5
 
-    -- ✅ Conta opções visíveis e calcula altura total do conteúdo
-    local function CalculateScrollSize()
-        local Count = 0
-        for _, child in pairs(ScrollFrame:GetChildren()) do
-            if child:IsA("Frame") and child.Name == "Option" and child.Visible then
-                Count = Count + 1
-            end
-        end
-        local visibleCount = math.clamp(Count, 0, MAX_VISIBLE_OPTIONS)
-        if visibleCount == 0 then
-            ScrollSize = 0
-        else
-            ScrollSize = (visibleCount * OPTION_HEIGHT) + ((visibleCount - 1) * OPTION_PADDING) + 10
-        end
-        return ScrollSize
+    local function Disable()
+        WaitClick = true
+        CreateTween({Arrow, "Rotation", 0, 0.2})
+        CreateTween({DropFrame, "Size", UDim2.new(0, DROPDOWN_WIDTH, 0, 0), 0.2, true})
+        CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
+        Arrow.Image = "rbxassetid://10709791523"
+        NoClickFrame.Visible = false
+        WaitClick = false
     end
 
-    -- ✅ Aplica tamanho e posição calculados
-    local function UpdateLayout()
-        -- Tamanho do scroll = conteúdo (limitado)
-        local scrollH = CalculateScrollSize()
+    -- ═══════════════════════════════════════════════════════
+    -- TAMANHO DO FRAME (agora usa as constantes)
+    -- ═══════════════════════════════════════════════════════
+    local function GetFrameSize()
+        return UDim2.fromOffset(DROPDOWN_WIDTH, ScrollSize + SEARCH_HEIGHT + 14)
+    end
 
-        -- Aplica ao ScrollFrame
-        ScrollFrame.Size = UDim2.new(1, 0, 0, scrollH)
+    local function CalculateSize(isSearching)
+        if isSearching then return end
+        local Count = 0
+        for _, Frame in pairs(ScrollFrame:GetChildren()) do
+            if Frame:IsA("Frame") or Frame.Name == "Option" then
+                if Frame.Visible then
+                    Count = Count + 1
+                end
+            end
+        end
+        -- ✅ usa OPTION_HEIGHT no cálculo e limita a MAX_VISIBLE_OPTS
+        ScrollSize = (math.clamp(Count, 0, MAX_VISIBLE_OPTS) * OPTION_HEIGHT) + 12
+        if NoClickFrame.Visible then
+            CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
+        end
+    end
 
-        -- Altura total do drop = searchbox + scroll + paddings
-        local totalH = SEARCHBOX_HEIGHT + scrollH + 6
+    -- ═══════════════════════════════════════════════════════
+    -- CÁLCULO DE POSIÇÃO CORRIGIDO (NÃO SAI MAIS DA TELA)
+    -- ═══════════════════════════════════════════════════════
+    local function CalculatePos()
+        local FramePos  = SelectedFrame.AbsolutePosition
+        local FrameSize = SelectedFrame.AbsoluteSize
+        local Viewport  = workspace.CurrentCamera.ViewportSize
 
-        -- Limita à tela
-        local screenH = workspace.CurrentCamera.ViewportSize.Y / UIScale
-        local maxH = screenH * DROPDOWN_MAX_RATIO
-        if totalH > maxH then
-            totalH = maxH
-            ScrollFrame.Size = UDim2.new(1, 0, 0, totalH - SEARCHBOX_HEIGHT - 6)
+        -- Largura real do dropdown em pixels de tela
+        local DropW = DROPDOWN_WIDTH * UIScale
+        local DropH = (ScrollSize + SEARCH_HEIGHT + 14) * UIScale
+
+        -- Posição desejada: abaixo do SelectedFrame
+        local desiredX = FramePos.X
+        local desiredY = FramePos.Y + FrameSize.Y + 2
+
+        -- Se não couber embaixo, joga pra cima
+        local goUp = (desiredY + DropH) > Viewport.Y
+        if goUp then
+            desiredY = FramePos.Y - DropH - 2
         end
 
-        -- ✅ Setta Size do DropFrame
-        DropFrame.Size = UDim2.fromOffset(DROPDOWN_WIDTH, totalH)
+        -- Clamp horizontal: se estourar a direita, empurra pra esquerda
+        local maxX = Viewport.X - DropW - 4
+        local clampedX = math.clamp(desiredX, 4, math.max(4, maxX))
 
-        -- ✅ Posiciona: borda DIREITA alinhada com SelectedFrame
-        local selAbsPos = SelectedFrame.AbsolutePosition
-        local selAbsSize = SelectedFrame.AbsoluteSize
+        -- Clamp vertical: nunca deixa sair de cima/baixo
+        local maxY = Viewport.Y - DropH - 4
+        local clampedY = math.clamp(desiredY, 4, math.max(4, maxY))
 
-        local selX = selAbsPos.X / UIScale
-        local selY = selAbsPos.Y / UIScale
-        local selW = selAbsSize.X / UIScale
-        local selH = selAbsSize.Y / UIScale
+        -- Converte pra coordenadas locais do DropdownHolder (que é filho do ScreenGui)
+        local NewPos = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
+        local AnchorPoint = goUp and Vector2.new(0, 1) or Vector2.new(0, 0)
 
-        -- Alinha direita do dropdown com direita do SelectedFrame
-        local targetX = (selX + selW) - DROPDOWN_WIDTH
-        local targetY = selY + selH + 2
-
-        -- Se não couber embaixo, abre pra cima
-        if targetY + totalH > screenH then
-            targetY = selY - totalH - 2
-        end
-
-        -- Clamp horizontal (não vazar da esquerda)
-        if targetX < 0 then targetX = 0 end
-
-        DropFrame.Position = UDim2.fromOffset(targetX, targetY)
+        DropFrame.AnchorPoint = AnchorPoint
+        CreateTween({DropFrame, "Position", NewPos, 0.1})
     end
 
     local Options = {}
@@ -6105,17 +6097,26 @@ function Tab:AddDropdownPlayer(Configs)
 
     local function SendPlayerNotification(plr, titleMessage)
         if not plr or not MyLibrary or not MyLibrary.NotifyWithImage then return end
+
         task.spawn(function()
             local thumb = "rbxassetid://0"
             pcall(function()
                 local content, isReady = Players:GetUserThumbnailAsync(
-                    plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48
+                    plr.UserId,
+                    Enum.ThumbnailType.HeadShot,
+                    Enum.ThumbnailSize.Size48x48
                 )
-                if isReady then thumb = content end
+                if isReady then
+                    thumb = content
+                end
             end)
+
             MyLibrary:NotifyWithImage({
-                Title = titleMessage, SubTitle = plr.DisplayName,
-                Message = "@" .. plr.Name, Image = thumb, Duration = 4
+                Title = titleMessage,
+                SubTitle = plr.DisplayName,
+                Message = "@" .. plr.Name,
+                Image = thumb,
+                Duration = 4
             })
         end)
     end
@@ -6125,11 +6126,14 @@ function Tab:AddDropdownPlayer(Configs)
             task.spawn(function()
                 pcall(function()
                     local content, isReady = Players:GetUserThumbnailAsync(
-                        playerObj.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48
+                        playerObj.UserId,
+                        Enum.ThumbnailType.HeadShot,
+                        Enum.ThumbnailSize.Size48x48
                     )
                     if isReady then
                         SelectedPlayerIcon.Image = content
                         SelectedPlayerIcon.Visible = true
+
                         ActiveLabel.AnchorPoint = Vector2.new(0, 0.5)
                         ActiveLabel.Position = UDim2.new(0, 26, 0.5, 0)
                         ActiveLabel.Size = UDim2.new(1, -45, 0.85, 0)
@@ -6194,13 +6198,17 @@ function Tab:AddDropdownPlayer(Configs)
         if SearchTextBox and string.len(SearchTextBox.Text) > 0 then
             wasSearching = true
         end
+
         Option.LastCB = tick()
         Selected = Option.Value
         CallbackSelected()
         UpdateSelected()
+
         if not suppressInitialNotify then
             local plr = Players:FindFirstChild(Selected)
-            if plr then SendPlayerNotification(plr, "Player Selecionado:") end
+            if plr then
+                SendPlayerNotification(plr, "Player Selecionado:")
+            end
         end
     end
 
@@ -6209,58 +6217,71 @@ function Tab:AddDropdownPlayer(Configs)
         if Options[Name] then return end
 
         local isFriend = false
-        pcall(function() isFriend = LocalPlayer:IsFriendsWith(plr.UserId) end)
+        pcall(function()
+            isFriend = LocalPlayer:IsFriendsWith(plr.UserId)
+        end)
 
         local displayName = plr.DisplayName
-        if isFriend then displayName = displayName .. " -AMG" end
+        if isFriend then
+            displayName = displayName .. " -AMG"
+        end
 
         Options[Name] = {
-            Value = Name, Name = Name, DisplayName = displayName,
-            IsFriend = isFriend, nodes = {}
+            Value = Name,
+            Name = Name,
+            DisplayName = displayName,
+            IsFriend = isFriend,
+            nodes = {}
         }
 
-        local OptionBtn = Make("Button", ScrollFrame, {
+        -- ═══════════════════════════════════════════════════════
+        -- OPÇÃO MAIS GROSSA E COM AVATAR MAIOR
+        -- ═══════════════════════════════════════════════════════
+        local Button = Make("Button", ScrollFrame, {
             Name = "Option",
             Size = UDim2.new(1, 0, 0, OPTION_HEIGHT),
             Position = UDim2.new(0, 0, 0.5),
             AnchorPoint = Vector2.new(0, 0.5),
-            LayoutOrder = isFriend and 1 or 2,
-            ZIndex = 504
+            LayoutOrder = isFriend and 1 or 2
         })
-        Make("Corner", OptionBtn, UDim.new(0, 6))
+        Make("Corner", Button, UDim.new(0, 5))
 
-        local IsSelected = InsertTheme(Create("Frame", OptionBtn, {
-            Position = UDim2.new(0, 1, 0.5),
+        local IsSelected = InsertTheme(Create("Frame", Button, {
+            Position = UDim2.new(0, 2, 0.5),
             Size = UDim2.new(0, 4, 0, 4),
             BackgroundColor3 = Theme["Color Theme"],
             BackgroundTransparency = 1,
-            AnchorPoint = Vector2.new(0, 0.5),
-            ZIndex = 505
+            AnchorPoint = Vector2.new(0, 0.5)
         }), "Theme")
         Make("Corner", IsSelected, UDim.new(0.5, 0))
 
-        local PlayerIcon = Create("ImageLabel", OptionBtn, {
-            Size = UDim2.fromOffset(28, 28),
-            Position = UDim2.new(0, 12, 0.5),
+        -- Avatar maior (era 20, agora 30)
+        local PlayerIcon = Create("ImageLabel", Button, {
+            Size = UDim2.fromOffset(30, 30),
+            Position = UDim2.new(0, 10, 0.5),
             AnchorPoint = Vector2.new(0, 0.5),
             BackgroundTransparency = 1,
-            Image = "rbxassetid://0",
-            ZIndex = 505
+            Image = "rbxassetid://0"
         })
         Make("Corner", PlayerIcon, UDim.new(0.5, 0))
 
         task.spawn(function()
             pcall(function()
                 local content, isReady = Players:GetUserThumbnailAsync(
-                    plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48
+                    plr.UserId,
+                    Enum.ThumbnailType.HeadShot,
+                    Enum.ThumbnailSize.Size48x48
                 )
-                if isReady then PlayerIcon.Image = content end
+                if isReady then
+                    PlayerIcon.Image = content
+                end
             end)
         end)
 
-        local DisplayLabel = InsertTheme(Create("TextLabel", OptionBtn, {
-            Size = UDim2.new(1, -50, 0, 16),
-            Position = UDim2.new(0, 46, 0, 3),
+        -- DisplayName deslocado (era 32, agora 46 por causa do avatar maior)
+        local DisplayLabel = InsertTheme(Create("TextLabel", Button, {
+            Size = UDim2.new(1, -54, 0, 16),
+            Position = UDim2.new(0, 46, 0, 5),
             Text = displayName,
             TextColor3 = Theme["Color Text"],
             Font = MyLibrary.CurrentFont,
@@ -6268,13 +6289,12 @@ function Tab:AddDropdownPlayer(Configs)
             TextXAlignment = "Left",
             BackgroundTransparency = 1,
             TextTransparency = 0.2,
-            TextTruncate = "AtEnd",
-            ZIndex = 505
+            TextTruncate = "AtEnd"
         }), "Text")
 
-        local UserLabel = InsertTheme(Create("TextLabel", OptionBtn, {
-            Size = UDim2.new(1, -50, 0, 12),
-            Position = UDim2.new(0, 46, 0, 20),
+        local UserLabel = InsertTheme(Create("TextLabel", Button, {
+            Size = UDim2.new(1, -54, 0, 12),
+            Position = UDim2.new(0, 46, 0, 22),
             Text = "@" .. Name,
             TextColor3 = Theme["Color Dark Text"],
             Font = MyLibrary.CurrentFont,
@@ -6282,12 +6302,14 @@ function Tab:AddDropdownPlayer(Configs)
             TextXAlignment = "Left",
             BackgroundTransparency = 1,
             TextTransparency = 0.5,
-            TextTruncate = "AtEnd",
-            ZIndex = 505
+            TextTruncate = "AtEnd"
         }), "SubText")
 
-        OptionBtn.Activated:Connect(function() Select(Options[Name]) end)
-        Options[Name].nodes = {OptionBtn, IsSelected, DisplayLabel, UserLabel}
+        Button.Activated:Connect(function()
+            Select(Options[Name])
+        end)
+
+        Options[Name].nodes = {Button, IsSelected, DisplayLabel, UserLabel}
     end
 
     local function RemoveOption(Name)
@@ -6303,29 +6325,44 @@ function Tab:AddDropdownPlayer(Configs)
     local function RefreshPlayers()
         if CustomOptions and type(CustomOptions) == "table" then
             for name in pairs(Options) do
-                if not table.find(CustomOptions, name) then RemoveOption(name) end
+                if not table.find(CustomOptions, name) then
+                    RemoveOption(name)
+                end
             end
             for _, name in ipairs(CustomOptions) do
                 local plr = Players:FindFirstChild(name)
-                if plr and plr ~= LocalPlayer then AddOption(plr) end
+                if plr and plr ~= LocalPlayer then
+                    AddOption(plr)
+                end
             end
         else
             for name in pairs(Options) do
-                if not Players:FindFirstChild(name) then RemoveOption(name) end
+                if not Players:FindFirstChild(name) then
+                    RemoveOption(name)
+                end
             end
             for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer then AddOption(plr) end
+                if plr ~= LocalPlayer then
+                    AddOption(plr)
+                end
             end
         end
 
         if not hasAutoSelected then
             hasAutoSelected = true
+            
             if autoSelectEnabled then
-                local firstOption, firstFriend = nil, nil
+                local firstOption = nil
+                local firstFriend = nil
+
                 for _, opt in pairs(Options) do
-                    if opt.IsFriend and not firstFriend then firstFriend = opt
-                    elseif not firstOption then firstOption = opt end
+                    if opt.IsFriend and not firstFriend then
+                        firstFriend = opt
+                    elseif not firstOption then
+                        firstOption = opt
+                    end
                 end
+
                 local autoTarget = firstFriend or firstOption
                 if autoTarget then
                     Selected = autoTarget.Value
@@ -6344,16 +6381,19 @@ function Tab:AddDropdownPlayer(Configs)
         end
 
         UpdateSelected()
-        if DropdownRoot.Visible then
-            task.defer(UpdateLayout)
-        end
+        CalculateSize(false)
     end
 
+    -- 🖱️ DETECTOR DE CLIQUE NO JOGO
     local cClick = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed or not clickToSelectEnabled or not ClickToggleActive then return end
+        if gameProcessed or not clickToSelectEnabled or not ClickToggleActive then 
+            return 
+        end
+
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             local mouse = LocalPlayer:GetMouse()
             local target = mouse.Target
+
             if target and target.Parent then
                 local characterModel = target:FindFirstAncestorOfClass("Model")
                 if characterModel then
@@ -6378,67 +6418,56 @@ function Tab:AddDropdownPlayer(Configs)
         for _, item in pairs(Options) do
             local matchDisplay = string.find(string.lower(item.DisplayName), query, 1, true)
             local matchUser = string.find(string.lower(item.Name), query, 1, true)
-            item.nodes[1].Visible = (query == "" or matchDisplay or matchUser)
+
+            if query == "" or matchDisplay or matchUser then
+                item.nodes[1].Visible = true
+            else
+                item.nodes[1].Visible = false
+            end
         end
-        if DropdownRoot.Visible then task.defer(UpdateLayout) end
+        CalculateSize(true)
     end)
 
-    -- ✅ Abrir/Fechar com cálculo correto e ZIndex controlado
-    local function ToggleDropdown()
+    local function Minimize()
         if WaitClick then return end
         WaitClick = true
-
-        if DropdownRoot.Visible then
-            -- FECHAR
+        if NoClickFrame.Visible then
             Arrow.Image = "rbxassetid://10709791523"
             CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
-            DropdownRoot.Visible = false
+            CreateTween({DropFrame, "Size", UDim2.new(0, DROPDOWN_WIDTH, 0, 0), 0.2, true})
+            NoClickFrame.Visible = false
         else
-            -- ABRIR
             SearchTextBox.Text = ""
-            for _, item in pairs(Options) do item.nodes[1].Visible = true end
-
-            DropdownRoot.Visible = true
+            for _, item in pairs(Options) do
+                item.nodes[1].Visible = true
+            end
+            NoClickFrame.Visible = true
             Arrow.Image = "rbxassetid://10709790948"
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
+            CalculateSize(false)
 
-            -- ✅ Defer: espera o jogo processar a visibilidade e o AbsolutePosition
-            task.defer(function()
-                UpdateLayout()
-                if wasSearching then
-                    ScrollToSelected()
-                    wasSearching = false
-                end
-            end)
+            -- ✅ Recalcula posição antes de mostrar (pra considerar o tamanho final)
+            CalculatePos()
+
+            CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
+
+            if wasSearching then
+                ScrollToSelected()
+                wasSearching = false
+            end
         end
-
         WaitClick = false
     end
 
-    Button.Activated:Connect(ToggleDropdown)
-    SearchBox.Activated:Connect(function() end)
+    Button.Activated:Connect(Minimize)
+    NoClickFrame.MouseButton1Down:Connect(Disable)
+    NoClickFrame.MouseButton1Click:Connect(Disable)
+    MainFrame:GetPropertyChangedSignal("Visible"):Connect(Disable)
+    SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(CalculatePos)
 
-    -- Blocker: clique fora fecha
-    NoClickFrame.MouseButton1Click:Connect(function()
-        if DropdownRoot.Visible then ToggleDropdown() end
-    end)
-
-    MainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
-        if DropdownRoot.Visible and not MainFrame.Visible then
-            DropdownRoot.Visible = false
-        end
-    end)
-
-    SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
-        if DropdownRoot.Visible then UpdateLayout() end
-    end)
-
-    ScrollFrame.ChildAdded:Connect(function()
-        if DropdownRoot.Visible then task.defer(UpdateLayout) end
-    end)
-    ScrollFrame.ChildRemoved:Connect(function()
-        if DropdownRoot.Visible then task.defer(UpdateLayout) end
-    end)
+    Button.Activated:Connect(function() CalculateSize(false) end)
+    ScrollFrame.ChildAdded:Connect(function() CalculateSize(false) end)
+    ScrollFrame.ChildRemoved:Connect(function() CalculateSize(false) end)
 
     local c1 = Players.PlayerAdded:Connect(function()
         task.wait(0.3)
@@ -6456,6 +6485,8 @@ function Tab:AddDropdownPlayer(Configs)
     end)
 
     RefreshPlayers()
+    CalculatePos()
+    CalculateSize(false)
 
     suppressInitialNotify = false
 
@@ -6465,7 +6496,6 @@ function Tab:AddDropdownPlayer(Configs)
         c1:Disconnect()
         c2:Disconnect()
         cClick:Disconnect()
-        DropdownRoot:Destroy()
         Button:Destroy()
     end
     Dropdown.ActiveLabel = ActiveLabel
