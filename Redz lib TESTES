@@ -5842,7 +5842,7 @@ function Tab:AddDropdownPlayer(Configs)
     -- ═══════════════════════════════════════════════════════
     -- DIMENSÕES CONFIGURÁVEIS (FÁCIL DE AJUSTAR)
     -- ═══════════════════════════════════════════════════════
-    local DROPDOWN_WIDTH    = 210   -- largura do frame de opções (era 152)
+    local DROPDOWN_WIDTH    = 180   -- largura do frame de opções (era 152)
     local OPTION_HEIGHT     = 40    -- altura de cada opção (era 28)
     local SEARCH_HEIGHT     = 26    -- altura da barra de busca
     local MAX_VISIBLE_OPTS  = 7     -- máximo de opções visíveis antes de scroll
