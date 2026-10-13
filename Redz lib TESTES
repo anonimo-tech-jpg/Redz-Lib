@@ -5830,7 +5830,7 @@ function Tab:AddDropdownPlayer(Configs)
     -- 📐 DIMENSÕES
     local OPTION_HEIGHT = 38
     local OPTION_PADDING = 6
-    local MAX_VISIBLE_OPTIONS = 6
+    local MAX_VISIBLE_OPTIONS = 5
 
     local wasSearching = false
     local hasAutoSelected = false
@@ -5951,15 +5951,15 @@ function Tab:AddDropdownPlayer(Configs)
         Text = ""
     })
 
-    -- 📐 DropFrame com largura IGUAL ao SelectedFrame (150)
+    -- ✅ DropFrame: SEM ClipsDescendants para não cortar nada
     local DropFrame = Create("Frame", NoClickFrame, {
-        Size = UDim2.new(0, 150, 0, 0),                -- ✅ mesma largura do SelectedFrame
+        Size = UDim2.new(0, 150, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        AnchorPoint = Vector2.new(0, 0),                -- ✅ sempre top-left
+        AnchorPoint = Vector2.new(0, 0),
         Position = UDim2.new(0, 0, 0, 0),
         Name = "DropdownFrame",
-        ClipsDescendants = true,
+        ClipsDescendants = false,    -- ✅ NÃO cortar
         Active = true
     })
     Make("Corner", DropFrame)
@@ -5988,6 +5988,7 @@ function Tab:AddDropdownPlayer(Configs)
         TextXAlignment = "Left"
     }), "Text")
 
+    -- ✅ ScrollFrame: com ClipsDescendants = true para o scroll funcionar
     local ScrollFrame = InsertTheme(Create("ScrollingFrame", DropFrame, {
         ScrollBarImageColor3 = Theme["Color Theme"],
         Size = UDim2.new(1, 0, 1, -38),
@@ -5998,90 +5999,75 @@ function Tab:AddDropdownPlayer(Configs)
         CanvasSize = UDim2.new(),
         ScrollingDirection = "Y",
         AutomaticCanvasSize = "Y",
-        Active = true
+        Active = true,
+        ClipsDescendants = true
     }, {
         Create("UIPadding", {
             PaddingLeft = UDim.new(0, 6),
             PaddingRight = UDim.new(0, 6),
             PaddingTop = UDim.new(0, 4),
-            PaddingBottom = UDim.new(0, 5)
+            PaddingBottom = UDim.new(0, 6)
         }),
-        Create("UIListLayout", { Padding = UDim.new(0, OPTION_PADDING), SortOrder = Enum.SortOrder.LayoutOrder })
+        Create("UIListLayout", { 
+            Padding = UDim.new(0, OPTION_PADDING), 
+            SortOrder = Enum.SortOrder.LayoutOrder 
+        })
     }), "ScrollBar")
 
-    local ScrollSize, WaitClick = 5
+    local ScrollSize = 5
+    local WaitClick = false
 
     local function GetFrameSize()
-        return UDim2.fromOffset(SelectedFrame.AbsoluteSize.X / UIScale, ScrollSize + 38)
+        return UDim2.fromOffset(
+            SelectedFrame.AbsoluteSize.X / UIScale,
+            ScrollSize + 38
+        )
     end
 
     local function Disable()
         WaitClick = true
         CreateTween({Arrow, "Rotation", 0, 0.2})
-        CreateTween({DropFrame, "Size", UDim2.new(0, SelectedFrame.AbsoluteSize.X / UIScale, 0, 0), 0.2, true})
+        CreateTween({DropFrame, "Size", UDim2.new(0, SelectedFrame.AbsoluteSize.X / UIScale, 0, 0), 0.2})
         CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
         Arrow.Image = "rbxassetid://10709791523"
         NoClickFrame.Visible = false
         WaitClick = false
     end
 
-    local function CalculateSize(isSearching)
+    -- ✅ CalculateSize: conta APENAS opções visíveis
+    local function CalculateSize()
         local Count = 0
         for _, Frame in pairs(ScrollFrame:GetChildren()) do
-            if Frame:IsA("Frame") and Frame.Name == "Option" then
-                if Frame.Visible then
-                    Count = Count + 1
-                end
+            if Frame:IsA("Frame") and Frame.Name == "Option" and Frame.Visible then
+                Count = Count + 1
             end
         end
-        ScrollSize = (math.clamp(Count, 0, MAX_VISIBLE_OPTIONS) * (OPTION_HEIGHT + OPTION_PADDING)) + 10
+        -- Altura = (n opções * altura + padding entre elas) + searchbox + paddings
+        ScrollSize = (math.clamp(Count, 1, MAX_VISIBLE_OPTIONS) * (OPTION_HEIGHT + OPTION_PADDING)) + 4
         if NoClickFrame.Visible then
-            CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
+            DropFrame.Size = GetFrameSize()
         end
     end
 
-    -- ✅ CalculatePos CORRIGIDO: alinha borda esquerda com o SelectedFrame
+    -- ✅ CalculatePos SIMPLIFICADO: sempre abre pra baixo, alinhado à esquerda
     local function CalculatePos()
         local selectedAbsPos = SelectedFrame.AbsolutePosition
         local selectedAbsSize = SelectedFrame.AbsoluteSize
-        local screenSize = ScreenGui.AbsoluteSize
 
-        -- Converte para coordenadas locais do ScreenGui (dividindo pelo UIScale)
+        -- Posição no espaço local do ScreenGui (dividindo pelo UIScale)
         local selX = selectedAbsPos.X / UIScale
         local selY = selectedAbsPos.Y / UIScale
         local selW = selectedAbsSize.X / UIScale
         local selH = selectedAbsSize.Y / UIScale
 
-        local screenW = screenSize.X / UIScale
-        local screenH = screenSize.Y / UIScale
-
-        -- Largura do dropdown = mesma largura do SelectedFrame
+        -- ✅ Força largura = largura do SelectedFrame
         local dropW = selW
-        DropFrame.Size = UDim2.fromOffset(dropW, DropFrame.Size.Y.Offset)
+        local currentH = DropFrame.Size.Y.Offset
+        DropFrame.Size = UDim2.fromOffset(dropW, currentH)
 
-        -- Posição base: logo ABAIXO do SelectedFrame, alinhado à esquerda
-        local baseX = selX
-        local baseY = selY + selH + 2
-
-        -- Altura máxima do dropdown
-        local dropH = DropFrame.Size.Y.Offset
-        if dropH <= 0 then dropH = ScrollSize + 38 end
-
-        -- Se não couber embaixo, abre pra cima
-        if baseY + dropH > screenH then
-            baseY = selY - dropH - 2
-        end
-
-        -- Clamp horizontal
-        local maxX = math.max(0, screenW - dropW)
-        local clampedX = math.clamp(baseX, 0, maxX)
-
-        -- Clamp vertical
-        local maxY = math.max(0, screenH - dropH)
-        local clampedY = math.clamp(baseY, 0, maxY)
-
+        -- ✅ SEMPRE abre pra BAIXO, alinhado à esquerda com o SelectedFrame
         DropFrame.AnchorPoint = Vector2.new(0, 0)
-        DropFrame.Position = UDim2.fromOffset(clampedX, clampedY)
+        DropFrame.Position = UDim2.fromOffset(selX, selY + selH + 2)
     end
 
     local Options = {}
@@ -6364,8 +6350,7 @@ function Tab:AddDropdownPlayer(Configs)
         end
 
         UpdateSelected()
-        CalculateSize(false)
-        CalculatePos()
+        CalculateSize()
     end
 
     local cClick = UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -6408,19 +6393,22 @@ function Tab:AddDropdownPlayer(Configs)
                 item.nodes[1].Visible = false
             end
         end
-        CalculateSize(true)
-        CalculatePos()
+        CalculateSize()
     end)
 
+    -- ✅ Minimize: calcula posição ANTES de abrir, depois anima o size
     local function Minimize()
         if WaitClick then return end
         WaitClick = true
+
         if NoClickFrame.Visible then
+            -- Fechar
             Arrow.Image = "rbxassetid://10709791523"
             CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
-            CreateTween({DropFrame, "Size", UDim2.new(0, SelectedFrame.AbsoluteSize.X / UIScale, 0, 0), 0.2, true})
+            CreateTween({DropFrame, "Size", UDim2.new(0, SelectedFrame.AbsoluteSize.X / UIScale, 0, 0), 0.2})
             NoClickFrame.Visible = false
         else
+            -- Abrir
             SearchTextBox.Text = ""
             for _, item in pairs(Options) do
                 item.nodes[1].Visible = true
@@ -6428,15 +6416,20 @@ function Tab:AddDropdownPlayer(Configs)
             NoClickFrame.Visible = true
             Arrow.Image = "rbxassetid://10709790948"
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
-            CalculateSize(false)
+
+            -- ✅ Calcula tamanho e posição ANTES de mostrar
+            CalculateSize()
             CalculatePos()
-            CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
+
+            -- ✅ Anima o crescimento a partir da posição correta
+            CreateTween({DropFrame, "Size", GetFrameSize(), 0.2})
 
             if wasSearching then
                 ScrollToSelected()
                 wasSearching = false
             end
         end
+
         WaitClick = false
     end
 
@@ -6447,9 +6440,8 @@ function Tab:AddDropdownPlayer(Configs)
     SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(CalculatePos)
     SelectedFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(CalculatePos)
 
-    Button.Activated:Connect(function() CalculateSize(false) end)
-    ScrollFrame.ChildAdded:Connect(function() CalculateSize(false) end)
-    ScrollFrame.ChildRemoved:Connect(function() CalculateSize(false) end)
+    ScrollFrame.ChildAdded:Connect(CalculateSize)
+    ScrollFrame.ChildRemoved:Connect(CalculateSize)
 
     local c1 = Players.PlayerAdded:Connect(function()
         task.wait(0.3)
@@ -6467,8 +6459,8 @@ function Tab:AddDropdownPlayer(Configs)
     end)
 
     RefreshPlayers()
+    CalculateSize()
     CalculatePos()
-    CalculateSize(false)
 
     suppressInitialNotify = false
 
