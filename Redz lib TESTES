@@ -5946,22 +5946,28 @@ function Tab:AddDropdownPlayer(Configs)
         UpdateToggleUI(ClickToggleActive)
     end)
 
-    local NoClickFrame = Create("TextButton", DropdownHolder, {
+    -- ✅ MUDANÇA PRINCIPAL: NoClickFrame agora é filho direto do ScreenGui,
+    -- e não tem mais Size = 1,0,1,0 (que causava o bug de referência)
+    local NoClickFrame = Create("TextButton", ScreenGui, {
         Name = "AntiClick",
-        Size = UDim2.new(1, 0, 1, 0),
+        Size = UDim2.new(0, 0, 0, 0),  -- ⚠️ Tamanho zero, ele não é mais o "container"
         BackgroundTransparency = 1,
         Visible = false,
         Text = ""
     })
 
-    local DropFrame = Create("Frame", NoClickFrame, {
+    -- ✅ DropFrame agora é filho direto do ScreenGui (não do NoClickFrame)
+    -- e usa UDim2.fromOffset com Position em coordenadas absolutas escaladas
+    local DropFrame = Create("Frame", ScreenGui, {
         Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 0, 0, 0),
+        AnchorPoint = Vector2.new(0, 0),  -- ✅ Fixo em (0,0) — sem mais confusão
         Name = "DropdownFrame",
         ClipsDescendants = true,
-        Active = true
+        Active = true,
+        ZIndex = 50  -- ⚠️ Acima dos outros elementos
     })
     Make("Corner", DropFrame)
     AddTransparency(DropFrame)
@@ -6046,41 +6052,36 @@ function Tab:AddDropdownPlayer(Configs)
     end
 
     -- ═══════════════════════════════════════════════════════
-    -- CÁLCULO DE POSIÇÃO — USA ScreenGui.AbsoluteSize (CONFIÁVEL)
+    -- CÁLCULO DE POSIÇÃO — SIMPLIFICADO E CORRETO
     -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
         local FramePos  = SelectedFrame.AbsolutePosition
         local FrameSize = SelectedFrame.AbsoluteSize
 
-        -- ✅ Usa o AbsoluteSize do ScreenGui (que já considera UIScale)
-        -- Isso é o que garante que fique sempre dentro da tela
+        -- ✅ Tudo em pixels de tela (ScreenGui.AbsoluteSize já considera UIScale)
         local ScreenSize = ScreenGui.AbsoluteSize
         local DropW = DROPDOWN_WIDTH * UIScale
         local DropH = (ScrollSize + SEARCH_HEIGHT + 14) * UIScale
 
-        -- Posição desejada: abaixo do SelectedFrame, alinhado à esquerda dele
+        -- ✅ Posição: abaixo do SelectedFrame, alinhado à esquerda
         local desiredX = FramePos.X
         local desiredY = FramePos.Y + FrameSize.Y + 2
 
-        -- Se não couber embaixo, joga pra cima
-        local goUp = (desiredY + DropH) > ScreenSize.Y
-        if goUp then
+        -- ✅ Se não couber embaixo, abre PRA CIMA, mas mantendo a base no topo do SelectedFrame
+        if (desiredY + DropH) > ScreenSize.Y then
             desiredY = FramePos.Y - DropH - 2
         end
 
-        -- ✅ Clamp usando o tamanho real do ScreenGui (não ViewportSize)
+        -- ✅ Clamp final pra garantir dentro da tela
         local maxX = ScreenSize.X - DropW - 4
         local clampedX = math.clamp(desiredX, 4, math.max(4, maxX))
 
         local maxY = ScreenSize.Y - DropH - 4
         local clampedY = math.clamp(desiredY, 4, math.max(4, maxY))
 
-        -- ✅ Converte pra offset dividindo pela escala
-        local NewPos = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
-        local AnchorPoint = goUp and Vector2.new(0, 1) or Vector2.new(0, 0)
-
-        DropFrame.AnchorPoint = AnchorPoint
-        CreateTween({DropFrame, "Position", NewPos, 0.1})
+        -- ✅ Aplica posição convertendo pra offset do ScreenGui
+        DropFrame.Position = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
+        DropFrame.AnchorPoint = Vector2.new(0, 0)  -- sempre (0,0)
     end
 
     local Options = {}
@@ -6432,8 +6433,8 @@ function Tab:AddDropdownPlayer(Configs)
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
             CalculateSize(false)
 
-            -- ✅ Recalcula posição DEPOIS de calcular o tamanho
-            task.defer(CalculatePos)
+            -- ✅ IMPORTANTE: calcular posição ANTES de abrir, com o ScrollSize já atualizado
+            CalculatePos()
 
             CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
 
@@ -6452,7 +6453,7 @@ function Tab:AddDropdownPlayer(Configs)
     SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(CalculatePos)
 
     Button.Activated:Connect(function()
-        task.defer(CalculatePos)
+        CalculatePos()
     end)
     ScrollFrame.ChildAdded:Connect(function() CalculateSize(false) end)
     ScrollFrame.ChildRemoved:Connect(function() CalculateSize(false) end)
@@ -6474,7 +6475,7 @@ function Tab:AddDropdownPlayer(Configs)
 
     RefreshPlayers()
     CalculateSize(false)
-    task.defer(CalculatePos)
+    CalculatePos()
 
     suppressInitialNotify = false
 
@@ -6485,6 +6486,8 @@ function Tab:AddDropdownPlayer(Configs)
         c2:Disconnect()
         cClick:Disconnect()
         Button:Destroy()
+        NoClickFrame:Destroy()
+        DropFrame:Destroy()
     end
     Dropdown.ActiveLabel = ActiveLabel
 
