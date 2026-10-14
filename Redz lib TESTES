@@ -5842,8 +5842,8 @@ function Tab:AddDropdownPlayer(Configs)
     -- ═══════════════════════════════════════════════════════
     -- DIMENSÕES CONFIGURÁVEIS (FÁCIL DE AJUSTAR)
     -- ═══════════════════════════════════════════════════════
-    local DROPDOWN_WIDTH    = 180   -- largura do frame de opções (era 152)
-    local OPTION_HEIGHT     = 40    -- altura de cada opção (era 28)
+    local DROPDOWN_WIDTH    = 180   -- largura do frame de opções
+    local OPTION_HEIGHT     = 40    -- altura de cada opção
     local SEARCH_HEIGHT     = 26    -- altura da barra de busca
     local MAX_VISIBLE_OPTS  = 7     -- máximo de opções visíveis antes de scroll
 
@@ -6031,7 +6031,7 @@ function Tab:AddDropdownPlayer(Configs)
     end
 
     -- ═══════════════════════════════════════════════════════
-    -- TAMANHO DO FRAME (agora usa as constantes)
+    -- TAMANHO DO FRAME
     -- ═══════════════════════════════════════════════════════
     local function GetFrameSize()
         return UDim2.fromOffset(DROPDOWN_WIDTH, ScrollSize + SEARCH_HEIGHT + 14)
@@ -6047,7 +6047,6 @@ function Tab:AddDropdownPlayer(Configs)
                 end
             end
         end
-        -- ✅ usa OPTION_HEIGHT no cálculo e limita a MAX_VISIBLE_OPTS
         ScrollSize = (math.clamp(Count, 0, MAX_VISIBLE_OPTS) * OPTION_HEIGHT) + 12
         if NoClickFrame.Visible then
             CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
@@ -6055,32 +6054,34 @@ function Tab:AddDropdownPlayer(Configs)
     end
 
     -- ═══════════════════════════════════════════════════════
-    -- CÁLCULO DE POSIÇÃO — ALINHADO À ESQUERDA DO SELECTEDFRAME
+    -- CÁLCULO DE POSIÇÃO — ALINHADO COM A ESQUERDA DO BUTTON
+    -- (o componente inteiro, não só o SelectedFrame)
     -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
-        local FramePos  = SelectedFrame.AbsolutePosition
-        local FrameSize = SelectedFrame.AbsoluteSize
-        local Viewport  = workspace.CurrentCamera.ViewportSize
+        local BtnPos   = Button.AbsolutePosition    -- ✅ usa o Button inteiro
+        local BtnSize  = Button.AbsoluteSize
+        local Viewport = workspace.CurrentCamera.ViewportSize
 
-        -- Largura/altura do dropdown em pixels de tela
+        -- Tamanho real que o DropFrame VAI ter quando abrir
         local DropW = DROPDOWN_WIDTH * UIScale
         local DropH = (ScrollSize + SEARCH_HEIGHT + 14) * UIScale
 
-        -- ✅ ALINHADO À ESQUERDA DO SELECTEDFRAME
-        local desiredX = FramePos.X
-        local desiredY = FramePos.Y + FrameSize.Y + 2
+        -- ✅ Alinha à ESQUERDA do Button inteiro
+        local desiredX = BtnPos.X
+        -- ✅ Abre ABAIXO do Button inteiro
+        local desiredY = BtnPos.Y + BtnSize.Y + 2
 
         -- Se não couber embaixo, joga pra cima
         local goUp = (desiredY + DropH) > Viewport.Y
         if goUp then
-            desiredY = FramePos.Y - DropH - 2
+            desiredY = BtnPos.Y - DropH - 2
         end
 
-        -- Clamp horizontal: se estourar a direita, empurra pra esquerda
+        -- Clamp horizontal
         local maxX = Viewport.X - DropW - 4
         local clampedX = math.clamp(desiredX, 4, math.max(4, maxX))
 
-        -- Clamp vertical: nunca deixa sair de cima/baixo
+        -- Clamp vertical
         local maxY = Viewport.Y - DropH - 4
         local clampedY = math.clamp(desiredY, 4, math.max(4, maxY))
 
@@ -6255,7 +6256,6 @@ function Tab:AddDropdownPlayer(Configs)
         }), "Theme")
         Make("Corner", IsSelected, UDim.new(0.5, 0))
 
-        -- Avatar maior (era 20, agora 30)
         local PlayerIcon = Create("ImageLabel", Button, {
             Size = UDim2.fromOffset(30, 30),
             Position = UDim2.new(0, 10, 0.5),
@@ -6278,7 +6278,6 @@ function Tab:AddDropdownPlayer(Configs)
             end)
         end)
 
-        -- DisplayName deslocado (era 32, agora 46 por causa do avatar maior)
         local DisplayLabel = InsertTheme(Create("TextLabel", Button, {
             Size = UDim2.new(1, -54, 0, 16),
             Position = UDim2.new(0, 46, 0, 5),
@@ -6428,6 +6427,9 @@ function Tab:AddDropdownPlayer(Configs)
         CalculateSize(true)
     end)
 
+    -- ═══════════════════════════════════════════════════════
+    -- MINIMIZE — CORRIGIDO (seta Size antes de calcular posição)
+    -- ═══════════════════════════════════════════════════════
     local function Minimize()
         if WaitClick then return end
         WaitClick = true
@@ -6444,12 +6446,20 @@ function Tab:AddDropdownPlayer(Configs)
             NoClickFrame.Visible = true
             Arrow.Image = "rbxassetid://10709790948"
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
+
+            -- ✅ Recalcula ScrollSize primeiro
             CalculateSize(false)
 
-            -- ✅ Recalcula posição antes de mostrar (pra considerar o tamanho final)
+            -- ✅ Seta o Size do DropFrame DIRETO (sem tween) pra poder calcular posição
+            local finalSize = GetFrameSize()
+            DropFrame.Size = finalSize
+
+            -- ✅ AGORA calcula a posição com o tamanho real
             CalculatePos()
 
-            CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
+            -- ✅ Aplica um tween só pra suavizar a abertura (de 0 até o tamanho final)
+            DropFrame.Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0)
+            CreateTween({DropFrame, "Size", finalSize, 0.2})
 
             if wasSearching then
                 ScrollToSelected()
