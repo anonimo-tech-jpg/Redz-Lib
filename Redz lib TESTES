@@ -5822,21 +5822,12 @@ function Tab:AddDropdownPlayer(Configs)
     if clickToSelectEnabled == nil then clickToSelectEnabled = true end
 
     -- ═══════════════════════════════════════════════════════
-    -- ✅ MODO DE POSIÇÃO
+    -- ✅ POSIÇÃO: Y fixo (alto da tela) + X alinhado com o SelectedFrame
     -- ═══════════════════════════════════════════════════════
-    -- "FIXED_Y"    → Y sempre fixo (recomendado) + X alinhado com o SelectedFrame
-    -- "FIXED"      → tudo fixo (X e Y)
-    -- "ANCHORED"   → cola no SelectedFrame em ambos eixos
-    local POSITION_MODE = Configs.PositionMode or "FIXED_Y"
-
-    -- ✅ Posição Y FIXA (Scale da tela) — 0 = topo, 0.5 = meio, 1 = baixo
-    local FIXED_Y_SCALE = Configs.FixedY or 0.45
-
-    -- ✅ Offset adicional em pixels (opcional, pra ajuste fino no Y)
+    -- FixedY: 0 = topo, 0.5 = meio, 1 = baixo
+    -- FixedYOffset: ajuste fino em pixels (positivo = mais baixo)
+    local FIXED_Y_SCALE  = Configs.FixedY or 0.32
     local FIXED_Y_OFFSET = Configs.FixedYOffset or 0
-
-    -- (Só usados no modo "FIXED" completo)
-    local FIXED_X_SCALE = Configs.FixedX or 0.5
 
     local CustomOptions = Configs.Options or Configs[2]
 
@@ -5972,7 +5963,7 @@ function Tab:AddDropdownPlayer(Configs)
         Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        AnchorPoint = Vector2.new(0, 0),  -- ✅ agora ancora no canto superior esquerdo
+        AnchorPoint = Vector2.new(0, 0),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         Name = "DropdownFrame",
         ClipsDescendants = true,
@@ -6059,63 +6050,25 @@ function Tab:AddDropdownPlayer(Configs)
 
     -- ═══════════════════════════════════════════════════════
     -- ✅ CÁLCULO DE POSIÇÃO
-    -- Y = SEMPRE FIXO | X = DINÂMICO (alinhado com SelectedFrame)
+    -- Y = FIXO (topo da tela) | X = DINÂMICO (alinhado com SelectedFrame)
     -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
-        if POSITION_MODE == "FIXED" then
-            -- Tudo fixo
-            DropFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-            CreateTween({DropFrame, "Position", UDim2.new(FIXED_X_SCALE, 0, FIXED_Y_SCALE, FIXED_Y_OFFSET), 0.1})
-            return
-        end
-
-        if POSITION_MODE == "FIXED_Y" then
-            -- ✅ X dinâmico, Y fixo
-            -- Pega a posição atual do SelectedFrame e alinha o X esquerdo do dropdown com o X esquerdo do botão
-            local FramePos = SelectedFrame.AbsolutePosition
-            local ScreenSize = ScreenGui.AbsoluteSize
-
-            -- Converte AbsolutePosition pra coordenada de tela (dividindo pela escala)
-            local btnX = FramePos.X / UIScale
-
-            -- ✅ Clamp do X pra não sair da tela
-            local DropW = DROPDOWN_WIDTH
-            local maxX = (ScreenSize.X / UIScale) - DropW - 4
-            local clampedX = math.clamp(btnX, 4, math.max(4, maxX))
-
-            -- ✅ Monta a posição: X dinâmico (offset) + Y fixo (scale)
-            DropFrame.AnchorPoint = Vector2.new(0, 0)  -- canto superior esquerdo
-            local NewPos = UDim2.new(0, clampedX, FIXED_Y_SCALE, FIXED_Y_OFFSET)
-            CreateTween({DropFrame, "Position", NewPos, 0.15})
-            return
-        end
-
-        -- MODO "ANCHORED" (antigo, cola no botão)
-        local FramePos  = SelectedFrame.AbsolutePosition
-        local FrameSize = SelectedFrame.AbsoluteSize
+        -- Pega a posição atual do SelectedFrame
+        local FramePos = SelectedFrame.AbsolutePosition
         local ScreenSize = ScreenGui.AbsoluteSize
-        local DropW = DROPDOWN_WIDTH * UIScale
-        local DropH = (ScrollSize + SEARCH_HEIGHT + 14) * UIScale
 
-        local desiredX = FramePos.X
-        local desiredY = FramePos.Y + FrameSize.Y + 2
+        -- Converte AbsolutePosition pra coordenada de tela (dividindo pela escala)
+        local btnX = FramePos.X / UIScale
 
-        local goUp = (desiredY + DropH) > ScreenSize.Y
-        if goUp then
-            desiredY = FramePos.Y - DropH - 2
-        end
+        -- ✅ Clamp do X pra não sair da tela
+        local DropW = DROPDOWN_WIDTH
+        local maxX = (ScreenSize.X / UIScale) - DropW - 4
+        local clampedX = math.clamp(btnX, 4, math.max(4, maxX))
 
-        local maxX = ScreenSize.X - DropW - 4
-        local clampedX = math.clamp(desiredX, 4, math.max(4, maxX))
-
-        local maxY = ScreenSize.Y - DropH - 4
-        local clampedY = math.clamp(desiredY, 4, math.max(4, maxY))
-
-        local NewPos = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
-        local AnchorPoint = goUp and Vector2.new(0, 1) or Vector2.new(0, 0)
-
-        DropFrame.AnchorPoint = AnchorPoint
-        CreateTween({DropFrame, "Position", NewPos, 0.1})
+        -- ✅ Monta a posição: X dinâmico (offset) + Y fixo (scale)
+        DropFrame.AnchorPoint = Vector2.new(0, 0)  -- canto superior esquerdo
+        local NewPos = UDim2.new(0, clampedX, FIXED_Y_SCALE, FIXED_Y_OFFSET)
+        CreateTween({DropFrame, "Position", NewPos, 0.15})
     end
 
     local Options = {}
