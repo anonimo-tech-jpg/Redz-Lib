@@ -5388,7 +5388,21 @@ function Tab:AddDropdown(Configs)
     local HasSearch = Configs.Search or Configs[6] or false
     local Callback = Funcs:GetCallback(Configs, 4)
 
-    local wasSearching = false -- Registra se o usuário selecionou algo durante uma pesquisa
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ POSIÇÃO: Y fixo (topo da tela) + X alinhado com o SelectedFrame
+    -- ═══════════════════════════════════════════════════════
+    local FIXED_Y_SCALE  = Configs.FixedY or 0.20
+    local FIXED_Y_OFFSET = Configs.FixedYOffset or 0
+
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ DIMENSÕES (mesmo estilo da AddDropdownPlayer)
+    -- ═══════════════════════════════════════════════════════
+    local DROPDOWN_WIDTH   = 180
+    local OPTION_HEIGHT    = 40
+    local SEARCH_HEIGHT    = 26
+    local MAX_VISIBLE_OPTS = 7
+
+    local wasSearching = false
 
     local Button, LabelFunc = ButtonFrame(Container, DName, DDesc, UDim2.new(1, -180))
 
@@ -5429,10 +5443,11 @@ function Tab:AddDropdown(Configs)
     })
 
     local DropFrame = Create("Frame", NoClickFrame, {
-        Size = UDim2.new(SelectedFrame.Size.X, 0, 0),
+        Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        AnchorPoint = Vector2.new(0, 1),
+        AnchorPoint = Vector2.new(0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
         Name = "DropdownFrame",
         ClipsDescendants = true,
         Active = true
@@ -5447,7 +5462,7 @@ function Tab:AddDropdown(Configs)
     if HasSearch then
         SearchBox = Make("Button", DropFrame, {
             Name = "SearchBox",
-            Size = UDim2.new(1, -16, 0, 22),
+            Size = UDim2.new(1, -16, 0, SEARCH_HEIGHT),
             Position = UDim2.new(0, 8, 0, 6),
             AnchorPoint = Vector2.new(0, 0)
         })
@@ -5469,8 +5484,8 @@ function Tab:AddDropdown(Configs)
 
     local ScrollFrame = InsertTheme(Create("ScrollingFrame", DropFrame, {
         ScrollBarImageColor3 = Theme["Color Theme"],
-        Size = HasSearch and UDim2.new(1, 0, 1, -34) or UDim2.new(1, 0, 1, 0),
-        Position = HasSearch and UDim2.new(0, 0, 0, 32) or UDim2.new(0, 0, 0, 0),
+        Size = HasSearch and UDim2.new(1, 0, 1, -(SEARCH_HEIGHT + 12)) or UDim2.new(1, 0, 1, 0),
+        Position = HasSearch and UDim2.new(0, 0, 0, SEARCH_HEIGHT + 8) or UDim2.new(0, 0, 0, 0),
         ScrollBarThickness = 1.5,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
@@ -5482,8 +5497,8 @@ function Tab:AddDropdown(Configs)
         Create("UIPadding", {
             PaddingLeft = UDim.new(0, 8),
             PaddingRight = UDim.new(0, 8),
-            PaddingTop = UDim.new(0, HasSearch and 2 or 5),
-            PaddingBottom = UDim.new(0, 5)
+            PaddingTop = UDim.new(0, HasSearch and 4 or 6),
+            PaddingBottom = UDim.new(0, 6)
         }),
         Create("UIListLayout", { Padding = UDim.new(0, 4) })
     }), "ScrollBar")
@@ -5493,7 +5508,7 @@ function Tab:AddDropdown(Configs)
     local function Disable()
         WaitClick = true
         CreateTween({Arrow, "Rotation", 0, 0.2})
-        CreateTween({DropFrame, "Size", UDim2.new(0, 152, 0, 0), 0.2, true})
+        CreateTween({DropFrame, "Size", UDim2.new(0, DROPDOWN_WIDTH, 0, 0), 0.2, true})
         CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
         Arrow.Image = "rbxassetid://10709791523"
         NoClickFrame.Visible = false
@@ -5501,10 +5516,13 @@ function Tab:AddDropdown(Configs)
     end
 
     local function GetFrameSize()
-        local ExtraOffset = HasSearch and 32 or 0
-        return UDim2.fromOffset(152, ScrollSize + ExtraOffset)
+        local ExtraOffset = HasSearch and (SEARCH_HEIGHT + 12) or 0
+        return UDim2.fromOffset(DROPDOWN_WIDTH, ScrollSize + ExtraOffset)
     end
 
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ CÁLCULO DE TAMANHO — usa OPTION_HEIGHT (40px) e MAX_VISIBLE_OPTS
+    -- ═══════════════════════════════════════════════════════
     local function CalculateSize(isSearching)
         if isSearching then return end
         local Count = 0
@@ -5515,22 +5533,30 @@ function Tab:AddDropdown(Configs)
                 end
             end
         end
-        ScrollSize = (math.clamp(Count, 0, 10) * 25) + 10
+        -- ✅ usa OPTION_HEIGHT no cálculo (mesma lógica do AddDropdownPlayer)
+        ScrollSize = (math.clamp(Count, 0, MAX_VISIBLE_OPTS) * OPTION_HEIGHT) + 12
         if NoClickFrame.Visible then
             CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
         end
     end
 
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ CÁLCULO DE POSIÇÃO
+    -- Y = FIXO (topo da tela) | X = DINÂMICO (alinhado com SelectedFrame)
+    -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
         local FramePos = SelectedFrame.AbsolutePosition
         local ScreenSize = ScreenGui.AbsoluteSize
-        local ClampX = math.clamp((FramePos.X / UIScale), 0, ScreenSize.X / UIScale - DropFrame.Size.X.Offset)
-        local ClampY = math.clamp((FramePos.Y / UIScale), 0, ScreenSize.Y / UIScale)
 
-        local NewPos = UDim2.fromOffset(ClampX, ClampY)
-        local AnchorPoint = FramePos.Y > ScreenSize.Y / 1.4 and 1 or ScrollSize > 80 and 0.5 or 0
-        DropFrame.AnchorPoint = Vector2.new(0, AnchorPoint)
-        CreateTween({DropFrame, "Position", NewPos, 0.1})
+        local btnX = FramePos.X / UIScale
+
+        local DropW = DROPDOWN_WIDTH
+        local maxX = (ScreenSize.X / UIScale) - DropW - 4
+        local clampedX = math.clamp(btnX, 4, math.max(4, maxX))
+
+        DropFrame.AnchorPoint = Vector2.new(0, 0)
+        local NewPos = UDim2.new(0, clampedX, FIXED_Y_SCALE, FIXED_Y_OFFSET)
+        CreateTween({DropFrame, "Position", NewPos, 0.15})
     end
 
     local AddNewOptions, GetOptions, AddOption, RemoveOption, Selected do
@@ -5571,7 +5597,7 @@ function Tab:AddDropdown(Configs)
                 for _, v in pairs(Options) do
                     local nodes, Stats = v.nodes, v.Stats
                     CreateTween({nodes[2], "BackgroundTransparency", Stats and 0 or 0.8, 0.35})
-                    CreateTween({nodes[2], "Size", Stats and UDim2.fromOffset(4, 12) or UDim2.fromOffset(4, 4), 0.35})
+                    CreateTween({nodes[2], "Size", Stats and UDim2.fromOffset(4, 26) or UDim2.fromOffset(4, 4), 0.35})
                     CreateTween({nodes[3], "TextTransparency", Stats and 0 or 0.4, 0.35})
                 end
             else
@@ -5579,14 +5605,13 @@ function Tab:AddDropdown(Configs)
                     local Slt = v.Value == Selected
                     local nodes = v.nodes
                     CreateTween({nodes[2], "BackgroundTransparency", Slt and 0 or 1, 0.35})
-                    CreateTween({nodes[2], "Size", Slt and UDim2.fromOffset(4, 14) or UDim2.fromOffset(4, 4), 0.35})
+                    CreateTween({nodes[2], "Size", Slt and UDim2.fromOffset(4, 26) or UDim2.fromOffset(4, 4), 0.35})
                     CreateTween({nodes[3], "TextTransparency", Slt and 0 or 0.4, 0.35})
                 end
             end
             UpdateLabel()
         end
 
-        -- Função auxiliar para rolar o ScrollFrame até o item selecionado
         local function ScrollToSelected()
             if not Selected or MultiSelect then return end
             for _, opt in pairs(Options) do
@@ -5602,7 +5627,6 @@ function Tab:AddDropdown(Configs)
         end
 
         local function Select(Option)
-            -- Verifica se o usuário selecionou uma opção enquanto pesquisava
             if HasSearch and SearchTextBox and string.len(SearchTextBox.Text) > 0 then
                 wasSearching = true
             end
@@ -5638,16 +5662,19 @@ function Tab:AddDropdown(Configs)
                 Options[Name].Stats = Stats
             end
 
+            -- ═══════════════════════════════════════════════════════
+            -- ✅ OPÇÃO MAIS GROSSA (mesma das players: 40px)
+            -- ═══════════════════════════════════════════════════════
             local Button = Make("Button", ScrollFrame, {
                 Name = "Option",
-                Size = UDim2.new(1, 0, 0, 21),
+                Size = UDim2.new(1, 0, 0, OPTION_HEIGHT),  -- ✅ 40 em vez de 21
                 Position = UDim2.new(0, 0, 0.5),
                 AnchorPoint = Vector2.new(0, 0.5)
             })
-            Make("Corner", Button, UDim.new(0, 4))
+            Make("Corner", Button, UDim.new(0, 5))
 
             local IsSelected = InsertTheme(Create("Frame", Button, {
-                Position = UDim2.new(0, 1, 0.5),
+                Position = UDim2.new(0, 2, 0.5),
                 Size = UDim2.new(0, 4, 0, 4),
                 BackgroundColor3 = Theme["Color Theme"],
                 BackgroundTransparency = 1,
@@ -5655,15 +5682,19 @@ function Tab:AddDropdown(Configs)
             }), "Theme")
             Make("Corner", IsSelected, UDim.new(0.5, 0))
 
+            -- ✅ Texto da opção com tamanho fixo (mais legível que TextScaled)
             local OptioneName = InsertTheme(Create("TextLabel", Button, {
-                Size = UDim2.new(1, 0, 1),
-                Position = UDim2.new(0, 10),
+                Size = UDim2.new(1, -20, 1, 0),
+                Position = UDim2.new(0, 14, 0.5),
+                AnchorPoint = Vector2.new(0, 0.5),
                 Text = Name,
                 TextColor3 = Theme["Color Text"],
                 Font = MyLibrary.CurrentFont,
+                TextSize = 13,          -- ✅ maior
                 TextXAlignment = "Left",
                 BackgroundTransparency = 1,
-                TextTransparency = 0.4
+                TextTransparency = 0.2,  -- ✅ menor transparência
+                TextTruncate = "AtEnd"
             }), "Text")
 
             Button.Activated:Connect(function()
@@ -5693,7 +5724,6 @@ function Tab:AddDropdown(Configs)
             UpdateSelected()
         end
 
-        -- Conecta o evento de busca apenas se HasSearch for true
         if HasSearch and SearchTextBox then
             SearchTextBox:GetPropertyChangedSignal("Text"):Connect(function()
                 local query = string.lower(SearchTextBox.Text)
@@ -5712,19 +5742,17 @@ function Tab:AddDropdown(Configs)
         CallbackSelected()
         UpdateSelected()
 
-        -- Lógica de minimizar/abrir o menu adaptada para rolar até a opção
         local function Minimize()
             if WaitClick then return end
             WaitClick = true
             if NoClickFrame.Visible then
                 Arrow.Image = "rbxassetid://10709791523"
                 CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
-                CreateTween({DropFrame, "Size", UDim2.new(0, 152, 0, 0), 0.2, true})
+                CreateTween({DropFrame, "Size", UDim2.new(0, DROPDOWN_WIDTH, 0, 0), 0.2, true})
                 NoClickFrame.Visible = false
             else
                 if HasSearch and SearchTextBox then
                     SearchTextBox.Text = ""
-                    -- Reseta a visibilidade de todas as opções
                     for _, item in pairs(Options) do
                         item.nodes[1].Visible = true
                     end
@@ -5733,12 +5761,12 @@ function Tab:AddDropdown(Configs)
                 Arrow.Image = "rbxassetid://10709790948"
                 CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
                 CalculateSize(false)
+                CalculatePos()
                 CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
 
-                -- Se foi selecionado durante uma pesquisa, rola o ScrollFrame até o item
                 if wasSearching then
                     ScrollToSelected()
-                    wasSearching = false -- Reseta o estado após aplicar a rolagem
+                    wasSearching = false
                 end
             end
             WaitClick = false
@@ -5814,20 +5842,20 @@ function Tab:AddDropdownPlayer(Configs)
     local Flag = Configs[5] or Configs.Flag or false
     local Callback = Funcs:GetCallback(Configs, 4)
 
-    -- Permite desativar a seleção automática enviando AutoSelect = false
     local autoSelectEnabled = Configs.AutoSelect
-    if autoSelectEnabled == nil then
-        autoSelectEnabled = true
-    end
+    if autoSelectEnabled == nil then autoSelectEnabled = true end
 
-    -- Configuração do Click Player (padrão true, configurável via ClickToSelect ou ClickPlayer)
     local clickToSelectEnabled = Configs.ClickToSelect
-    if clickToSelectEnabled == nil then
-        clickToSelectEnabled = Configs.ClickPlayer
-    end
-    if clickToSelectEnabled == nil then
-        clickToSelectEnabled = true
-    end
+    if clickToSelectEnabled == nil then clickToSelectEnabled = Configs.ClickPlayer end
+    if clickToSelectEnabled == nil then clickToSelectEnabled = true end
+
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ POSIÇÃO: Y fixo (alto da tela) + X alinhado com o SelectedFrame
+    -- ═══════════════════════════════════════════════════════
+    -- FixedY: 0 = topo, 0.5 = meio, 1 = baixo
+    -- FixedYOffset: ajuste fino em pixels (positivo = mais baixo)
+    local FIXED_Y_SCALE  = Configs.FixedY or 0.20
+    local FIXED_Y_OFFSET = Configs.FixedYOffset or 0
 
     local CustomOptions = Configs.Options or Configs[2]
 
@@ -5838,6 +5866,11 @@ function Tab:AddDropdownPlayer(Configs)
     local wasSearching = false
     local hasAutoSelected = false
     local suppressInitialNotify = true
+
+    local DROPDOWN_WIDTH    = 180
+    local OPTION_HEIGHT     = 40
+    local SEARCH_HEIGHT     = 26
+    local MAX_VISIBLE_OPTS  = 7
 
     local Button, LabelFunc = ButtonFrame(Container, DName, DDesc, UDim2.new(1, -180))
 
@@ -5880,8 +5913,8 @@ function Tab:AddDropdownPlayer(Configs)
         BackgroundTransparency = 1
     })
 
-    -- 🔘 MINI TOGGLE "CLICK PLAYER" (Estilo Original, cor do texto fixa em Color Dark Text)
-    local ClickToggleActive = false -- Inicia OFF
+    -- 🔘 MINI TOGGLE "CLICK PLAYER"
+    local ClickToggleActive = false
 
     local ClickPlayerFrame = InsertTheme(Create("TextButton", Button, {
         Size = UDim2.new(0, 150, 0, 14),
@@ -5955,10 +5988,11 @@ function Tab:AddDropdownPlayer(Configs)
     })
 
     local DropFrame = Create("Frame", NoClickFrame, {
-        Size = UDim2.new(SelectedFrame.Size.X, 0, 0),
+        Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        AnchorPoint = Vector2.new(0, 1),
+        AnchorPoint = Vector2.new(0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
         Name = "DropdownFrame",
         ClipsDescendants = true,
         Active = true
@@ -5970,7 +6004,7 @@ function Tab:AddDropdownPlayer(Configs)
 
     local SearchBox = Make("Button", DropFrame, {
         Name = "SearchBox",
-        Size = UDim2.new(1, -16, 0, 22),
+        Size = UDim2.new(1, -16, 0, SEARCH_HEIGHT),
         Position = UDim2.new(0, 8, 0, 6),
         AnchorPoint = Vector2.new(0, 0)
     })
@@ -5991,8 +6025,8 @@ function Tab:AddDropdownPlayer(Configs)
 
     local ScrollFrame = InsertTheme(Create("ScrollingFrame", DropFrame, {
         ScrollBarImageColor3 = Theme["Color Theme"],
-        Size = UDim2.new(1, 0, 1, -34),
-        Position = UDim2.new(0, 0, 0, 32),
+        Size = UDim2.new(1, 0, 1, -(SEARCH_HEIGHT + 12)),
+        Position = UDim2.new(0, 0, 0, SEARCH_HEIGHT + 8),
         ScrollBarThickness = 1.5,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
@@ -6004,8 +6038,8 @@ function Tab:AddDropdownPlayer(Configs)
         Create("UIPadding", {
             PaddingLeft = UDim.new(0, 8),
             PaddingRight = UDim.new(0, 8),
-            PaddingTop = UDim.new(0, 2),
-            PaddingBottom = UDim.new(0, 5)
+            PaddingTop = UDim.new(0, 4),
+            PaddingBottom = UDim.new(0, 6)
         }),
         Create("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder })
     }), "ScrollBar")
@@ -6015,7 +6049,7 @@ function Tab:AddDropdownPlayer(Configs)
     local function Disable()
         WaitClick = true
         CreateTween({Arrow, "Rotation", 0, 0.2})
-        CreateTween({DropFrame, "Size", UDim2.new(0, 152, 0, 0), 0.2, true})
+        CreateTween({DropFrame, "Size", UDim2.new(0, DROPDOWN_WIDTH, 0, 0), 0.2, true})
         CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
         Arrow.Image = "rbxassetid://10709791523"
         NoClickFrame.Visible = false
@@ -6023,7 +6057,7 @@ function Tab:AddDropdownPlayer(Configs)
     end
 
     local function GetFrameSize()
-        return UDim2.fromOffset(152, ScrollSize + 32)
+        return UDim2.fromOffset(DROPDOWN_WIDTH, ScrollSize + SEARCH_HEIGHT + 14)
     end
 
     local function CalculateSize(isSearching)
@@ -6036,22 +6070,33 @@ function Tab:AddDropdownPlayer(Configs)
                 end
             end
         end
-        ScrollSize = (math.clamp(Count, 0, 8) * 32) + 10
+        ScrollSize = (math.clamp(Count, 0, MAX_VISIBLE_OPTS) * OPTION_HEIGHT) + 12
         if NoClickFrame.Visible then
             CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
         end
     end
 
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ CÁLCULO DE POSIÇÃO
+    -- Y = FIXO (topo da tela) | X = DINÂMICO (alinhado com SelectedFrame)
+    -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
+        -- Pega a posição atual do SelectedFrame
         local FramePos = SelectedFrame.AbsolutePosition
         local ScreenSize = ScreenGui.AbsoluteSize
-        local ClampX = math.clamp((FramePos.X / UIScale), 0, ScreenSize.X / UIScale - DropFrame.Size.X.Offset)
-        local ClampY = math.clamp((FramePos.Y / UIScale), 0, ScreenSize.Y / UIScale)
 
-        local NewPos = UDim2.fromOffset(ClampX, ClampY)
-        local AnchorPoint = FramePos.Y > ScreenSize.Y / 1.4 and 1 or ScrollSize > 80 and 0.5 or 0
-        DropFrame.AnchorPoint = Vector2.new(0, AnchorPoint)
-        CreateTween({DropFrame, "Position", NewPos, 0.1})
+        -- Converte AbsolutePosition pra coordenada de tela (dividindo pela escala)
+        local btnX = FramePos.X / UIScale
+
+        -- ✅ Clamp do X pra não sair da tela
+        local DropW = DROPDOWN_WIDTH
+        local maxX = (ScreenSize.X / UIScale) - DropW - 4
+        local clampedX = math.clamp(btnX, 4, math.max(4, maxX))
+
+        -- ✅ Monta a posição: X dinâmico (offset) + Y fixo (scale)
+        DropFrame.AnchorPoint = Vector2.new(0, 0)  -- canto superior esquerdo
+        local NewPos = UDim2.new(0, clampedX, FIXED_Y_SCALE, FIXED_Y_OFFSET)
+        CreateTween({DropFrame, "Position", NewPos, 0.15})
     end
 
     local Options = {}
@@ -6134,7 +6179,7 @@ function Tab:AddDropdownPlayer(Configs)
             local nodes = v.nodes
             if nodes then
                 CreateTween({nodes[2], "BackgroundTransparency", Slt and 0 or 1, 0.35})
-                CreateTween({nodes[2], "Size", Slt and UDim2.fromOffset(4, 20) or UDim2.fromOffset(4, 4), 0.35})
+                CreateTween({nodes[2], "Size", Slt and UDim2.fromOffset(4, 26) or UDim2.fromOffset(4, 4), 0.35})
                 CreateTween({nodes[3], "TextTransparency", Slt and 0 or 0.2, 0.35})
                 CreateTween({nodes[4], "TextTransparency", Slt and 0.2 or 0.5, 0.35})
             end
@@ -6198,15 +6243,15 @@ function Tab:AddDropdownPlayer(Configs)
 
         local Button = Make("Button", ScrollFrame, {
             Name = "Option",
-            Size = UDim2.new(1, 0, 0, 28),
+            Size = UDim2.new(1, 0, 0, OPTION_HEIGHT),
             Position = UDim2.new(0, 0, 0.5),
             AnchorPoint = Vector2.new(0, 0.5),
             LayoutOrder = isFriend and 1 or 2
         })
-        Make("Corner", Button, UDim.new(0, 4))
+        Make("Corner", Button, UDim.new(0, 5))
 
         local IsSelected = InsertTheme(Create("Frame", Button, {
-            Position = UDim2.new(0, 1, 0.5),
+            Position = UDim2.new(0, 2, 0.5),
             Size = UDim2.new(0, 4, 0, 4),
             BackgroundColor3 = Theme["Color Theme"],
             BackgroundTransparency = 1,
@@ -6215,8 +6260,8 @@ function Tab:AddDropdownPlayer(Configs)
         Make("Corner", IsSelected, UDim.new(0.5, 0))
 
         local PlayerIcon = Create("ImageLabel", Button, {
-            Size = UDim2.fromOffset(20, 20),
-            Position = UDim2.new(0, 8, 0.5),
+            Size = UDim2.fromOffset(30, 30),
+            Position = UDim2.new(0, 10, 0.5),
             AnchorPoint = Vector2.new(0, 0.5),
             BackgroundTransparency = 1,
             Image = "rbxassetid://0"
@@ -6237,12 +6282,12 @@ function Tab:AddDropdownPlayer(Configs)
         end)
 
         local DisplayLabel = InsertTheme(Create("TextLabel", Button, {
-            Size = UDim2.new(1, -34, 0, 14),
-            Position = UDim2.new(0, 32, 0, 2),
+            Size = UDim2.new(1, -54, 0, 16),
+            Position = UDim2.new(0, 46, 0, 5),
             Text = displayName,
             TextColor3 = Theme["Color Text"],
             Font = MyLibrary.CurrentFont,
-            TextSize = 12,
+            TextSize = 13,
             TextXAlignment = "Left",
             BackgroundTransparency = 1,
             TextTransparency = 0.2,
@@ -6250,12 +6295,12 @@ function Tab:AddDropdownPlayer(Configs)
         }), "Text")
 
         local UserLabel = InsertTheme(Create("TextLabel", Button, {
-            Size = UDim2.new(1, -34, 0, 10),
-            Position = UDim2.new(0, 32, 0, 16),
+            Size = UDim2.new(1, -54, 0, 12),
+            Position = UDim2.new(0, 46, 0, 22),
             Text = "@" .. Name,
             TextColor3 = Theme["Color Dark Text"],
             Font = MyLibrary.CurrentFont,
-            TextSize = 10,
+            TextSize = 11,
             TextXAlignment = "Left",
             BackgroundTransparency = 1,
             TextTransparency = 0.5,
@@ -6307,7 +6352,7 @@ function Tab:AddDropdownPlayer(Configs)
 
         if not hasAutoSelected then
             hasAutoSelected = true
-            
+
             if autoSelectEnabled then
                 local firstOption = nil
                 local firstFriend = nil
@@ -6343,9 +6388,8 @@ function Tab:AddDropdownPlayer(Configs)
 
     -- 🖱️ DETECTOR DE CLIQUE NO JOGO
     local cClick = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        -- Só executa se NÃO clicou na UI e se o toggle "Click Player" estiver ON
-        if gameProcessed or not clickToSelectEnabled or not ClickToggleActive then 
-            return 
+        if gameProcessed or not clickToSelectEnabled or not ClickToggleActive then
+            return
         end
 
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -6392,7 +6436,7 @@ function Tab:AddDropdownPlayer(Configs)
         if NoClickFrame.Visible then
             Arrow.Image = "rbxassetid://10709791523"
             CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
-            CreateTween({DropFrame, "Size", UDim2.new(0, 152, 0, 0), 0.2, true})
+            CreateTween({DropFrame, "Size", UDim2.new(0, DROPDOWN_WIDTH, 0, 0), 0.2, true})
             NoClickFrame.Visible = false
         else
             SearchTextBox.Text = ""
@@ -6403,6 +6447,10 @@ function Tab:AddDropdownPlayer(Configs)
             Arrow.Image = "rbxassetid://10709790948"
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
             CalculateSize(false)
+
+            -- ✅ Recalcula posição ANTES de mostrar
+            CalculatePos()
+
             CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
 
             if wasSearching then
@@ -6419,7 +6467,9 @@ function Tab:AddDropdownPlayer(Configs)
     MainFrame:GetPropertyChangedSignal("Visible"):Connect(Disable)
     SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(CalculatePos)
 
-    Button.Activated:Connect(function() CalculateSize(false) end)
+    Button.Activated:Connect(function()
+        task.defer(CalculatePos)
+    end)
     ScrollFrame.ChildAdded:Connect(function() CalculateSize(false) end)
     ScrollFrame.ChildRemoved:Connect(function() CalculateSize(false) end)
 
@@ -6439,8 +6489,8 @@ function Tab:AddDropdownPlayer(Configs)
     end)
 
     RefreshPlayers()
-    CalculatePos()
     CalculateSize(false)
+    CalculatePos()  -- ✅ aplica no início
 
     suppressInitialNotify = false
 
@@ -6470,8 +6520,6 @@ function Tab:AddDropdownPlayer(Configs)
 
     return Dropdown
 end
-
-
 
         function Tab:AddSlider(Configs)
             local SName = Configs[1] or Configs.Name or Configs.Title or "Slider!"
