@@ -5821,6 +5821,18 @@ function Tab:AddDropdownPlayer(Configs)
     if clickToSelectEnabled == nil then clickToSelectEnabled = Configs.ClickPlayer end
     if clickToSelectEnabled == nil then clickToSelectEnabled = true end
 
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ MODO DE POSIÇÃO — "FIXED" É O RECOMENDADO
+    -- ═══════════════════════════════════════════════════════
+    -- "FIXED"      → sempre aparece no mesmo lugar da tela (NUNCA buga)
+    -- "ANCHORED"   → cola no SelectedFrame (comportamento antigo)
+    local POSITION_MODE = Configs.PositionMode or "FIXED"
+
+    -- Posição fixa (Scale da tela) — usada se POSITION_MODE == "FIXED"
+    -- 0.5 = centro horizontal, 0.5 = centro vertical
+    local FIXED_X_SCALE = Configs.FixedX or 0.5
+    local FIXED_Y_SCALE = Configs.FixedY or 0.5
+
     local CustomOptions = Configs.Options or Configs[2]
 
     local Players = game:GetService("Players")
@@ -5831,9 +5843,6 @@ function Tab:AddDropdownPlayer(Configs)
     local hasAutoSelected = false
     local suppressInitialNotify = true
 
-    -- ═══════════════════════════════════════════════════════
-    -- DIMENSÕES CONFIGURÁVEIS
-    -- ═══════════════════════════════════════════════════════
     local DROPDOWN_WIDTH    = 180
     local OPTION_HEIGHT     = 40
     local SEARCH_HEIGHT     = 26
@@ -5946,28 +5955,23 @@ function Tab:AddDropdownPlayer(Configs)
         UpdateToggleUI(ClickToggleActive)
     end)
 
-    -- ✅ MUDANÇA PRINCIPAL: NoClickFrame agora é filho direto do ScreenGui,
-    -- e não tem mais Size = 1,0,1,0 (que causava o bug de referência)
-    local NoClickFrame = Create("TextButton", ScreenGui, {
+    local NoClickFrame = Create("TextButton", DropdownHolder, {
         Name = "AntiClick",
-        Size = UDim2.new(0, 0, 0, 0),  -- ⚠️ Tamanho zero, ele não é mais o "container"
+        Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
         Visible = false,
         Text = ""
     })
 
-    -- ✅ DropFrame agora é filho direto do ScreenGui (não do NoClickFrame)
-    -- e usa UDim2.fromOffset com Position em coordenadas absolutas escaladas
-    local DropFrame = Create("Frame", ScreenGui, {
+    local DropFrame = Create("Frame", NoClickFrame, {
         Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        Position = UDim2.new(0, 0, 0, 0),
-        AnchorPoint = Vector2.new(0, 0),  -- ✅ Fixo em (0,0) — sem mais confusão
+        AnchorPoint = Vector2.new(0, 0),  -- ✅ mudou de (0,1) pra (0,0) — agora ancora no canto superior esquerdo
+        Position = UDim2.new(0.5, 0, 0.5, 0),  -- ✅ posição padrão no centro (será sobrescrita)
         Name = "DropdownFrame",
         ClipsDescendants = true,
-        Active = true,
-        ZIndex = 50  -- ⚠️ Acima dos outros elementos
+        Active = true
     })
     Make("Corner", DropFrame)
     AddTransparency(DropFrame)
@@ -6028,9 +6032,6 @@ function Tab:AddDropdownPlayer(Configs)
         WaitClick = false
     end
 
-    -- ═══════════════════════════════════════════════════════
-    -- TAMANHO DO FRAME
-    -- ═══════════════════════════════════════════════════════
     local function GetFrameSize()
         return UDim2.fromOffset(DROPDOWN_WIDTH, ScrollSize + SEARCH_HEIGHT + 14)
     end
@@ -6052,36 +6053,43 @@ function Tab:AddDropdownPlayer(Configs)
     end
 
     -- ═══════════════════════════════════════════════════════
-    -- CÁLCULO DE POSIÇÃO — SIMPLIFICADO E CORRETO
+    -- ✅ CÁLCULO DE POSIÇÃO — MODO FIXO (RECOMENDADO)
     -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
+        if POSITION_MODE == "FIXED" then
+            -- ✅ SEMPRE no mesmo lugar — centralizado na tela
+            -- Não importa onde o SelectedFrame esteja, o dropdown sempre abre aqui
+            DropFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+            CreateTween({DropFrame, "Position", UDim2.new(FIXED_X_SCALE, 0, FIXED_Y_SCALE, 0), 0.1})
+            return
+        end
+
+        -- MODO "ANCHORED" (comportamento antigo, corrigido)
         local FramePos  = SelectedFrame.AbsolutePosition
         local FrameSize = SelectedFrame.AbsoluteSize
-
-        -- ✅ Tudo em pixels de tela (ScreenGui.AbsoluteSize já considera UIScale)
         local ScreenSize = ScreenGui.AbsoluteSize
         local DropW = DROPDOWN_WIDTH * UIScale
         local DropH = (ScrollSize + SEARCH_HEIGHT + 14) * UIScale
 
-        -- ✅ Posição: abaixo do SelectedFrame, alinhado à esquerda
         local desiredX = FramePos.X
         local desiredY = FramePos.Y + FrameSize.Y + 2
 
-        -- ✅ Se não couber embaixo, abre PRA CIMA, mas mantendo a base no topo do SelectedFrame
-        if (desiredY + DropH) > ScreenSize.Y then
+        local goUp = (desiredY + DropH) > ScreenSize.Y
+        if goUp then
             desiredY = FramePos.Y - DropH - 2
         end
 
-        -- ✅ Clamp final pra garantir dentro da tela
         local maxX = ScreenSize.X - DropW - 4
         local clampedX = math.clamp(desiredX, 4, math.max(4, maxX))
 
         local maxY = ScreenSize.Y - DropH - 4
         local clampedY = math.clamp(desiredY, 4, math.max(4, maxY))
 
-        -- ✅ Aplica posição convertendo pra offset do ScreenGui
-        DropFrame.Position = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
-        DropFrame.AnchorPoint = Vector2.new(0, 0)  -- sempre (0,0)
+        local NewPos = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
+        local AnchorPoint = goUp and Vector2.new(0, 1) or Vector2.new(0, 0)
+
+        DropFrame.AnchorPoint = AnchorPoint
+        CreateTween({DropFrame, "Position", NewPos, 0.1})
     end
 
     local Options = {}
@@ -6433,7 +6441,7 @@ function Tab:AddDropdownPlayer(Configs)
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
             CalculateSize(false)
 
-            -- ✅ IMPORTANTE: calcular posição ANTES de abrir, com o ScrollSize já atualizado
+            -- ✅ Recalcula posição (agora é instantâneo em modo FIXED)
             CalculatePos()
 
             CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
@@ -6453,7 +6461,7 @@ function Tab:AddDropdownPlayer(Configs)
     SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(CalculatePos)
 
     Button.Activated:Connect(function()
-        CalculatePos()
+        task.defer(CalculatePos)
     end)
     ScrollFrame.ChildAdded:Connect(function() CalculateSize(false) end)
     ScrollFrame.ChildRemoved:Connect(function() CalculateSize(false) end)
@@ -6475,7 +6483,7 @@ function Tab:AddDropdownPlayer(Configs)
 
     RefreshPlayers()
     CalculateSize(false)
-    CalculatePos()
+    CalculatePos()  -- ✅ aplica a posição fixa já no início
 
     suppressInitialNotify = false
 
@@ -6486,8 +6494,6 @@ function Tab:AddDropdownPlayer(Configs)
         c2:Disconnect()
         cClick:Disconnect()
         Button:Destroy()
-        NoClickFrame:Destroy()
-        DropFrame:Destroy()
     end
     Dropdown.ActiveLabel = ActiveLabel
 
