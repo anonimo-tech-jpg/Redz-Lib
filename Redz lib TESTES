@@ -5821,9 +5821,22 @@ function Tab:AddDropdownPlayer(Configs)
     if clickToSelectEnabled == nil then clickToSelectEnabled = Configs.ClickPlayer end
     if clickToSelectEnabled == nil then clickToSelectEnabled = true end
 
-    -- Offset fino (em pixels) caso queira afinar o alinhamento
-    local OFFSET_X = Configs.OffsetX or 0
-    local OFFSET_Y = Configs.OffsetY or 2
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ MODO DE POSIÇÃO
+    -- ═══════════════════════════════════════════════════════
+    -- "FIXED_Y"    → Y sempre fixo (recomendado) + X alinhado com o SelectedFrame
+    -- "FIXED"      → tudo fixo (X e Y)
+    -- "ANCHORED"   → cola no SelectedFrame em ambos eixos
+    local POSITION_MODE = Configs.PositionMode or "FIXED_Y"
+
+    -- ✅ Posição Y FIXA (Scale da tela) — 0 = topo, 0.5 = meio, 1 = baixo
+    local FIXED_Y_SCALE = Configs.FixedY or 0.45
+
+    -- ✅ Offset adicional em pixels (opcional, pra ajuste fino no Y)
+    local FIXED_Y_OFFSET = Configs.FixedYOffset or 0
+
+    -- (Só usados no modo "FIXED" completo)
+    local FIXED_X_SCALE = Configs.FixedX or 0.5
 
     local CustomOptions = Configs.Options or Configs[2]
 
@@ -5955,15 +5968,12 @@ function Tab:AddDropdownPlayer(Configs)
         Text = ""
     })
 
-    -- ═══════════════════════════════════════════════════════
-    -- DropFrame: AnchorPoint (0,0) = canto superior ESQUERDO
-    -- Assim a posição X dele = posição X do SelectedFrame
-    -- ═══════════════════════════════════════════════════════
     local DropFrame = Create("Frame", NoClickFrame, {
         Size = UDim2.new(0, DROPDOWN_WIDTH, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        AnchorPoint = Vector2.new(0, 0),
+        AnchorPoint = Vector2.new(0, 0),  -- ✅ agora ancora no canto superior esquerdo
+        Position = UDim2.new(0.5, 0, 0.5, 0),
         Name = "DropdownFrame",
         ClipsDescendants = true,
         Active = true
@@ -6048,46 +6058,64 @@ function Tab:AddDropdownPlayer(Configs)
     end
 
     -- ═══════════════════════════════════════════════════════
-    -- ✅ CÁLCULO DE POSIÇÃO — SEMPRE ALINHADO AO SELECTEDFRAME
-    -- ═══════════════════════════════════════════════════════
-    -- A cada abertura, calcula a posição do SelectedFrame em tempo real
-    -- e posiciona o DropFrame com a MESMA posição X (alinhado à esquerda)
-    -- e logo ABAIXO do SelectedFrame (ou ACIMA se não couber).
-    --
-    -- Como o DropFrame tem AnchorPoint (0,0), sua posição X.Y é o canto
-    -- superior esquerdo dele. Então alinhar X = X do SelectedFrame deixa
-    -- as duas esquerdas na mesma linha vertical.
+    -- ✅ CÁLCULO DE POSIÇÃO
+    -- Y = SEMPRE FIXO | X = DINÂMICO (alinhado com SelectedFrame)
     -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
-        -- Pega posição e tamanho do SelectedFrame em pixels absolutos de tela
-        local SelPos  = SelectedFrame.AbsolutePosition
-        local SelSize = SelectedFrame.AbsoluteSize
-
-        -- Converte para coordenadas "absolutas divididas por UIScale"
-        -- porque o DropFrame está dentro do ScreenGui que tem UIScale aplicado
-        local scale = UIScale or 1
-
-        -- ✅ X: mesmo X do SelectedFrame (alinhado à esquerda) + offset fino
-        local targetX = (SelPos.X / scale) + OFFSET_X
-
-        -- ✅ Y: abaixo do SelectedFrame + offset fino
-        local targetY = ((SelPos.Y + SelSize.Y) / scale) + OFFSET_Y
-
-        -- Verifica se cabe embaixo — se não, joga pra cima
-        local DropH = (ScrollSize + SEARCH_HEIGHT + 14)      -- altura em offset "lógico"
-        local ScreenH = (workspace.CurrentCamera.ViewportSize.Y / scale)  -- altura útil lógica
-
-        local goUp = (targetY + DropH) > ScreenH
-        if goUp then
-            -- Coloca ACIMA do SelectedFrame: Y dele menos a altura do dropdown
-            targetY = ((SelPos.Y) / scale) - DropH - OFFSET_Y
-            DropFrame.AnchorPoint = Vector2.new(0, 0) -- mantém (0,0), Y já calculado
-        else
-            DropFrame.AnchorPoint = Vector2.new(0, 0)
+        if POSITION_MODE == "FIXED" then
+            -- Tudo fixo
+            DropFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+            CreateTween({DropFrame, "Position", UDim2.new(FIXED_X_SCALE, 0, FIXED_Y_SCALE, FIXED_Y_OFFSET), 0.1})
+            return
         end
 
-        -- Aplica posição (sem tween pra não ter atraso visual na abertura)
-        DropFrame.Position = UDim2.fromOffset(targetX, targetY)
+        if POSITION_MODE == "FIXED_Y" then
+            -- ✅ X dinâmico, Y fixo
+            -- Pega a posição atual do SelectedFrame e alinha o X esquerdo do dropdown com o X esquerdo do botão
+            local FramePos = SelectedFrame.AbsolutePosition
+            local ScreenSize = ScreenGui.AbsoluteSize
+
+            -- Converte AbsolutePosition pra coordenada de tela (dividindo pela escala)
+            local btnX = FramePos.X / UIScale
+
+            -- ✅ Clamp do X pra não sair da tela
+            local DropW = DROPDOWN_WIDTH
+            local maxX = (ScreenSize.X / UIScale) - DropW - 4
+            local clampedX = math.clamp(btnX, 4, math.max(4, maxX))
+
+            -- ✅ Monta a posição: X dinâmico (offset) + Y fixo (scale)
+            DropFrame.AnchorPoint = Vector2.new(0, 0)  -- canto superior esquerdo
+            local NewPos = UDim2.new(0, clampedX, FIXED_Y_SCALE, FIXED_Y_OFFSET)
+            CreateTween({DropFrame, "Position", NewPos, 0.15})
+            return
+        end
+
+        -- MODO "ANCHORED" (antigo, cola no botão)
+        local FramePos  = SelectedFrame.AbsolutePosition
+        local FrameSize = SelectedFrame.AbsoluteSize
+        local ScreenSize = ScreenGui.AbsoluteSize
+        local DropW = DROPDOWN_WIDTH * UIScale
+        local DropH = (ScrollSize + SEARCH_HEIGHT + 14) * UIScale
+
+        local desiredX = FramePos.X
+        local desiredY = FramePos.Y + FrameSize.Y + 2
+
+        local goUp = (desiredY + DropH) > ScreenSize.Y
+        if goUp then
+            desiredY = FramePos.Y - DropH - 2
+        end
+
+        local maxX = ScreenSize.X - DropW - 4
+        local clampedX = math.clamp(desiredX, 4, math.max(4, maxX))
+
+        local maxY = ScreenSize.Y - DropH - 4
+        local clampedY = math.clamp(desiredY, 4, math.max(4, maxY))
+
+        local NewPos = UDim2.fromOffset(clampedX / UIScale, clampedY / UIScale)
+        local AnchorPoint = goUp and Vector2.new(0, 1) or Vector2.new(0, 0)
+
+        DropFrame.AnchorPoint = AnchorPoint
+        CreateTween({DropFrame, "Position", NewPos, 0.1})
     end
 
     local Options = {}
@@ -6439,8 +6467,7 @@ function Tab:AddDropdownPlayer(Configs)
             CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
             CalculateSize(false)
 
-            -- ✅ Recalcula posição IMEDIATAMENTE antes de mostrar
-            -- (usa o SelectedFrame.AbsolutePosition atual, sem depender de eventos)
+            -- ✅ Recalcula posição ANTES de mostrar
             CalculatePos()
 
             CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
@@ -6457,20 +6484,7 @@ function Tab:AddDropdownPlayer(Configs)
     NoClickFrame.MouseButton1Down:Connect(Disable)
     NoClickFrame.MouseButton1Click:Connect(Disable)
     MainFrame:GetPropertyChangedSignal("Visible"):Connect(Disable)
-
-    -- Recalcula posição quando o Hub se move (o dropdown acompanha)
-    SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
-        if NoClickFrame.Visible then
-            CalculatePos()
-        end
-    end)
-
-    -- Recalcula quando o MainFrame se move (arrastar o Hub inteiro)
-    MainFrame:GetPropertyChangedSignal("Position"):Connect(function()
-        if NoClickFrame.Visible then
-            CalculatePos()
-        end
-    end)
+    SelectedFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(CalculatePos)
 
     Button.Activated:Connect(function()
         task.defer(CalculatePos)
@@ -6495,7 +6509,7 @@ function Tab:AddDropdownPlayer(Configs)
 
     RefreshPlayers()
     CalculateSize(false)
-    CalculatePos()
+    CalculatePos()  -- ✅ aplica no início
 
     suppressInitialNotify = false
 
