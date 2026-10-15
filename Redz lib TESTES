@@ -5826,7 +5826,7 @@ function Tab:AddDropdownPlayer(Configs)
     -- ═══════════════════════════════════════════════════════
     -- FixedY: 0 = topo, 0.5 = meio, 1 = baixo
     -- FixedYOffset: ajuste fino em pixels (positivo = mais baixo)
-    local FIXED_Y_SCALE  = Configs.FixedY or 0.32
+    local FIXED_Y_SCALE  = Configs.FixedY or 0.25
     local FIXED_Y_OFFSET = Configs.FixedYOffset or 0
 
     local CustomOptions = Configs.Options or Configs[2]
