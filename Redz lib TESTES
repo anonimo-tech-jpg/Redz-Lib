@@ -5388,7 +5388,15 @@ function Tab:AddDropdown(Configs)
     local HasSearch = Configs.Search or Configs[6] or false
     local Callback = Funcs:GetCallback(Configs, 4)
 
-    local wasSearching = false -- Registra se o usuário selecionou algo durante uma pesquisa
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ POSIÇÃO: Y fixo (topo da tela) + X alinhado com o SelectedFrame
+    -- ═══════════════════════════════════════════════════════
+    -- FixedY: 0 = topo, 0.5 = meio, 1 = baixo
+    -- FixedYOffset: ajuste fino em pixels (positivo = mais baixo)
+    local FIXED_Y_SCALE  = Configs.FixedY or 0.20
+    local FIXED_Y_OFFSET = Configs.FixedYOffset or 0
+
+    local wasSearching = false
 
     local Button, LabelFunc = ButtonFrame(Container, DName, DDesc, UDim2.new(1, -180))
 
@@ -5429,10 +5437,11 @@ function Tab:AddDropdown(Configs)
     })
 
     local DropFrame = Create("Frame", NoClickFrame, {
-        Size = UDim2.new(SelectedFrame.Size.X, 0, 0),
+        Size = UDim2.new(0, 180, 0, 0),
         BackgroundTransparency = 0.1,
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        AnchorPoint = Vector2.new(0, 1),
+        AnchorPoint = Vector2.new(0, 0),  -- ✅ canto superior esquerdo
+        Position = UDim2.new(0.5, 0, 0.5, 0),  -- será sobrescrito
         Name = "DropdownFrame",
         ClipsDescendants = true,
         Active = true
@@ -5493,7 +5502,7 @@ function Tab:AddDropdown(Configs)
     local function Disable()
         WaitClick = true
         CreateTween({Arrow, "Rotation", 0, 0.2})
-        CreateTween({DropFrame, "Size", UDim2.new(0, 152, 0, 0), 0.2, true})
+        CreateTween({DropFrame, "Size", UDim2.new(0, 180, 0, 0), 0.2, true})
         CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
         Arrow.Image = "rbxassetid://10709791523"
         NoClickFrame.Visible = false
@@ -5502,7 +5511,7 @@ function Tab:AddDropdown(Configs)
 
     local function GetFrameSize()
         local ExtraOffset = HasSearch and 32 or 0
-        return UDim2.fromOffset(152, ScrollSize + ExtraOffset)
+        return UDim2.fromOffset(180, ScrollSize + ExtraOffset)
     end
 
     local function CalculateSize(isSearching)
@@ -5521,16 +5530,27 @@ function Tab:AddDropdown(Configs)
         end
     end
 
+    -- ═══════════════════════════════════════════════════════
+    -- ✅ CÁLCULO DE POSIÇÃO
+    -- Y = FIXO (topo da tela) | X = DINÂMICO (alinhado com SelectedFrame)
+    -- ═══════════════════════════════════════════════════════
     local function CalculatePos()
+        -- Pega a posição atual do SelectedFrame
         local FramePos = SelectedFrame.AbsolutePosition
         local ScreenSize = ScreenGui.AbsoluteSize
-        local ClampX = math.clamp((FramePos.X / UIScale), 0, ScreenSize.X / UIScale - DropFrame.Size.X.Offset)
-        local ClampY = math.clamp((FramePos.Y / UIScale), 0, ScreenSize.Y / UIScale)
 
-        local NewPos = UDim2.fromOffset(ClampX, ClampY)
-        local AnchorPoint = FramePos.Y > ScreenSize.Y / 1.4 and 1 or ScrollSize > 80 and 0.5 or 0
-        DropFrame.AnchorPoint = Vector2.new(0, AnchorPoint)
-        CreateTween({DropFrame, "Position", NewPos, 0.1})
+        -- Converte AbsolutePosition pra coordenada de tela (dividindo pela escala)
+        local btnX = FramePos.X / UIScale
+
+        -- ✅ Clamp do X pra não sair da tela
+        local DropW = 180
+        local maxX = (ScreenSize.X / UIScale) - DropW - 4
+        local clampedX = math.clamp(btnX, 4, math.max(4, maxX))
+
+        -- ✅ Monta a posição: X dinâmico (offset) + Y fixo (scale)
+        DropFrame.AnchorPoint = Vector2.new(0, 0)  -- canto superior esquerdo
+        local NewPos = UDim2.new(0, clampedX, FIXED_Y_SCALE, FIXED_Y_OFFSET)
+        CreateTween({DropFrame, "Position", NewPos, 0.15})
     end
 
     local AddNewOptions, GetOptions, AddOption, RemoveOption, Selected do
@@ -5719,7 +5739,7 @@ function Tab:AddDropdown(Configs)
             if NoClickFrame.Visible then
                 Arrow.Image = "rbxassetid://10709791523"
                 CreateTween({Arrow, "ImageColor3", Color3.fromRGB(255, 255, 255), 0.2})
-                CreateTween({DropFrame, "Size", UDim2.new(0, 152, 0, 0), 0.2, true})
+                CreateTween({DropFrame, "Size", UDim2.new(0, 180, 0, 0), 0.2, true})
                 NoClickFrame.Visible = false
             else
                 if HasSearch and SearchTextBox then
@@ -5733,6 +5753,10 @@ function Tab:AddDropdown(Configs)
                 Arrow.Image = "rbxassetid://10709790948"
                 CreateTween({Arrow, "ImageColor3", Theme["Color Theme"], 0.2})
                 CalculateSize(false)
+
+                -- ✅ Recalcula posição ANTES de mostrar
+                CalculatePos()
+
                 CreateTween({DropFrame, "Size", GetFrameSize(), 0.2, true})
 
                 -- Se foi selecionado durante uma pesquisa, rola o ScrollFrame até o item
@@ -5826,7 +5850,7 @@ function Tab:AddDropdownPlayer(Configs)
     -- ═══════════════════════════════════════════════════════
     -- FixedY: 0 = topo, 0.5 = meio, 1 = baixo
     -- FixedYOffset: ajuste fino em pixels (positivo = mais baixo)
-    local FIXED_Y_SCALE  = Configs.FixedY or 0.25
+    local FIXED_Y_SCALE  = Configs.FixedY or 0.20
     local FIXED_Y_OFFSET = Configs.FixedYOffset or 0
 
     local CustomOptions = Configs.Options or Configs[2]
