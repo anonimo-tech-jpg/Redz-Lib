@@ -2133,7 +2133,7 @@ function Tab:AddMusicPlayer(Cfg)
         Next = "rbxassetid://11283329347",
         Repeat = "rbxassetid://121565343679841",
         Stop = "rbxassetid://116155660929916",
-        RepeatOne = "rbxassetid://105201736549364",
+        RepeatOne = "rbxassetid://101892266050705",
     }
 
     local function fire(name, ...)
@@ -2173,16 +2173,12 @@ function Tab:AddMusicPlayer(Cfg)
     local duration, position = 0, 0
     local conns = {}
 
-    -- som (local = audivel | remote = mudo, so serve pra medir tempo)
-    local Snd = Instance.new("Sound")
-    Snd.Name = "SAGAZ_MusicPlayer"
-    Snd.Looped = false
-    Snd.Parent = SoundService
-    ScreenGui.Destroying:Connect(function() Snd:Destroy() end)
+-- som (criado novo a cada musica)
+local Snd, endConn
 
-    local function ApplyVolume()
-        Snd.Volume = isLocal and (volume / 100) or 0
-    end
+local function ApplyVolume()
+    if Snd then Snd.Volume = isLocal and (volume / 100) or 0 end
+end
 
     ------------------------------------------------------------------
     -- QUADRO
@@ -2526,15 +2522,43 @@ function Tab:AddMusicPlayer(Cfg)
     ------------------------------------------------------------------
     -- MOTOR DO PLAYER
     ------------------------------------------------------------------
+    local gen, handledGen = 0, -1
+    local startClock, pausedAt, pausedTotal = 0, nil, 0
+
+    local function KillSound()
+        if endConn then endConn:Disconnect() endConn = nil end
+        if Snd then
+            local old = Snd
+            Snd = nil
+            pcall(function() old:Stop() old:Destroy() end)
+        end
+    end
+    ScreenGui.Destroying:Connect(KillSound)
+
     local function FindIndex(id)
         for i, t in ipairs(tracks) do
             if t.id == id then return i end
         end
     end
 
-    local PlayTrack, StopPlayer, PausePlayer, ResumePlayer
+    local PlayTrack, StopPlayer, PausePlayer, ResumePlayer, HandleEnd
 
-    PlayTrack = function(id, name)
+    local function NewSound(id, myGen)
+        KillSound()
+        local s = Instance.new("Sound")
+        s.Name = "SAGAZ_MusicPlayer"
+        s.Looped = false
+        s.SoundId = "rbxassetid://" .. id
+        s.Volume = isLocal and (volume / 100) or 0
+        s.Parent = SoundService
+        Snd = s
+        endConn = s.Ended:Connect(function()
+            if myGen == gen then HandleEnd(myGen) end
+        end)
+        s:Play()
+    end
+
+    PlayTrack = function(id, name, replay)
         id = CleanId(id)
         if id == "" then return end
 
@@ -2543,36 +2567,50 @@ function Tab:AddMusicPlayer(Cfg)
             name = idx and tracks[idx].name or ("Musica " .. id)
         end
 
+        gen = gen + 1
+        local myGen = gen
+
         current = {id = id, name = name}
         TitleLabel.Text = name
         ArtistLabel.Text = "ID: " .. id
 
-        Snd:Stop()
-        Snd.SoundId = "rbxassetid://" .. id
-        Snd.TimePosition = 0
-        ApplyVolume()
-        Snd:Play()
+        NewSound(id, myGen)
 
         playing, stopped = true, false
+        startClock, pausedAt, pausedTotal = os.clock(), nil, 0
         UpdatePlayIcon()
         UpdateProgress(0, 0)
 
-        if not isLocal then fire("RemotePlay", id) end
+        if not isLocal then
+            if replay then
+                -- mesmo ID de novo: para e toca de novo pra reiniciar no servidor
+                fire("RemoteStop")
+                task.delay(0.5, function()
+                    if gen == myGen and not isLocal and not stopped then
+                        fire("RemotePlay", id)
+                    end
+                end)
+            else
+                fire("RemotePlay", id)
+            end
+        end
         fire("OnPlay", id, name)
     end
 
     StopPlayer = function(skipRemote)
-        Snd:Stop()
+        gen = gen + 1
+        KillSound()
         playing, stopped = false, true
         UpdatePlayIcon()
-        UpdateProgress(0)
+        UpdateProgress(0, 0)
         if not isLocal and not skipRemote then fire("RemoteStop") end
         fire("OnStop")
     end
 
     PausePlayer = function()
         if not current or stopped or not playing then return end
-        Snd:Pause()
+        if Snd then Snd:Pause() end
+        pausedAt = os.clock()
         playing = false
         UpdatePlayIcon()
         if not isLocal then fire("RemotePause") end
@@ -2581,7 +2619,8 @@ function Tab:AddMusicPlayer(Cfg)
 
     ResumePlayer = function()
         if not current or stopped or playing then return end
-        Snd:Resume()
+        if Snd then Snd:Resume() end
+        if pausedAt then pausedTotal = pausedTotal + (os.clock() - pausedAt) pausedAt = nil end
         playing = true
         UpdatePlayIcon()
         if not isLocal then fire("RemoteResume") end
@@ -2619,6 +2658,33 @@ function Tab:AddMusicPlayer(Cfg)
         fire("OnPrevious")
     end
 
+    -- fim da musica (Ended ou plano B do Heartbeat; so roda 1x por musica)
+    HandleEnd = function(myGen)
+        if myGen ~= gen or handledGen == myGen or not current then return end
+        handledGen = myGen
+
+        local rep = RepeatStates[repeatIdx]
+        if rep == "One" then
+            PlayTrack(current.id, current.name, true)
+            return
+        end
+
+        local idx = FindIndex(current.id)
+        if idx and idx < #tracks then
+            local t = tracks[idx + 1]
+            PlayTrack(t.id, t.name)
+        elseif rep == "All" then
+            if idx and #tracks > 0 then
+                local t = tracks[1]
+                PlayTrack(t.id, t.name, t.id == current.id)
+            else
+                PlayTrack(current.id, current.name, true)
+            end
+        else
+            StopPlayer(true)
+        end
+    end
+
     ApplyMode = function(newLocal)
         newLocal = newLocal == true
         if newLocal == isLocal then return end
@@ -2640,32 +2706,20 @@ function Tab:AddMusicPlayer(Cfg)
         fire("OnModeChanged", isLocal)
     end
 
-    -- fim da musica
-    Snd.Ended:Connect(function()
-        if not current then return end
-        local rep = RepeatStates[repeatIdx]
-        if rep == "One" then
-            PlayTrack(current.id, current.name)
-            return
-        end
-        local idx = FindIndex(current.id)
-        if idx and idx < #tracks then
-            local t = tracks[idx + 1]
-            PlayTrack(t.id, t.name)
-        elseif rep == "All" and #tracks > 0 then
-            PlayTrack(tracks[1].id, tracks[1].name)
-        else
-            StopPlayer(true)
-        end
-    end)
-
-    -- atualiza barra de tempo
+    -- atualiza barra e contador
     table.insert(conns, Track(RunService.Heartbeat:Connect(function()
-        if not current or stopped then return end
-        if Snd.TimeLength > 0 then
-            UpdateProgress(Snd.TimePosition, Snd.TimeLength)
-        else
-            UpdateProgress(0, 0)
+        if not current or stopped or not Snd then return end
+
+        local len = Snd.TimeLength
+        if len > 0 then
+            UpdateProgress(Snd.TimePosition, len)
+            if playing and Snd.TimePosition >= len - 0.05 then
+                HandleEnd(gen)
+            end
+        elseif not (ProgState and ProgState.dragging) then
+            -- audio ainda carregando / nao carregou: conta o tempo
+            local el = (pausedAt or os.clock()) - startClock - pausedTotal
+            CurTime.Text = FormatTime(el)
         end
     end)))
 
@@ -2676,7 +2730,7 @@ function Tab:AddMusicPlayer(Cfg)
             CurTime.Text = FormatTime(f * duration)
         end,
         function(f)
-            if isLocal and current and not stopped and duration > 0 then
+            if isLocal and Snd and current and not stopped and duration > 0 then
                 Snd.TimePosition = f * duration
                 fire("OnSeek", f * duration)
             end
@@ -2738,9 +2792,9 @@ function Tab:AddMusicPlayer(Cfg)
     function MusicPlayer:GetRepeat() return RepeatStates[repeatIdx] end
     function MusicPlayer:IsPlaying() return playing end
     function MusicPlayer:Visible(...) Funcs:ToggleVisible(Frame, ...) end
-    function MusicPlayer:Destroy()
+        function MusicPlayer:Destroy()
         for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
-        Snd:Destroy()
+        KillSound()
         Frame:Destroy()
     end
 
