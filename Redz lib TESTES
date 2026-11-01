@@ -2121,6 +2121,343 @@ function MyLibrary:MakeWindow(Configs)
             return Paragraph
         end
 
+        function Tab:AddMusicPlayer(Cfg)
+            Cfg = Cfg or {}
+            local UIS = game:GetService("UserInputService")
+            local SoundService = game:GetService("SoundService")
+            local MPS = game:GetService("MarketplaceService")
+
+            local RemotePlay = Cfg.RemotePlay or function(id) end
+            local RemoteStop = Cfg.RemoteStop or function() end
+
+            local ACCENT = Color3.fromRGB(255, 200, 40)
+            local WHITE = Color3.fromRGB(255, 255, 255)
+            local GRAY = Color3.fromRGB(175, 172, 150)
+            local GREEN = Color3.fromRGB(90, 220, 120)
+
+            local function new(class, props, parent)
+                local o = Instance.new(class)
+                for k, v in pairs(props) do o[k] = v end
+                o.Parent = parent
+                return o
+            end
+            local function corner(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
+
+            -- ===== Estado =====
+            local State = {
+                Queue = {}, Index = 0, Current = nil, Original = "",
+                Playing = false, Local = false, Repeat = 0, -- 0 off | 1 lista | 2 faixa
+            }
+            local conns = {}
+
+            local Sound = new("Sound", {
+                Name = "RedzMusicPlayer", Volume = 0, Looped = false,
+            }, SoundService)
+
+            -- ===== UI =====
+            local Frame = new("Frame", {
+                Size = UDim2.new(1, -20, 0, 122),
+                BackgroundColor3 = WHITE, BorderSizePixel = 0,
+            }, Container)
+            corner(Frame, 8)
+            new("UIGradient", {
+                Color = ColorSequence.new(Color3.fromRGB(78, 68, 12), Color3.fromRGB(16, 14, 6)),
+                Rotation = 90,
+            }, Frame)
+            new("UIStroke", {Color = WHITE, Transparency = 0.88, Thickness = 1}, Frame)
+
+            local TitleLbl = new("TextLabel", {
+                Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -92, 0, 20),
+                BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 15,
+                TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd, Text = Cfg.Title or "Nenhuma música",
+            }, Frame)
+            local SubLbl = new("TextLabel", {
+                Position = UDim2.fromOffset(12, 28), Size = UDim2.new(1, -24, 0, 16),
+                BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
+                TextColor3 = GRAY, TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd, Text = "Escolha uma música na lista",
+            }, Frame)
+            local ModeLbl = new("TextLabel", {
+                AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 10),
+                Size = UDim2.fromOffset(54, 16), BackgroundColor3 = Color3.new(0, 0, 0),
+                BackgroundTransparency = 0.6, Font = Enum.Font.GothamBold, TextSize = 10,
+                TextColor3 = ACCENT, Text = "REMOTE",
+            }, Frame)
+            corner(ModeLbl, 8)
+
+            -- Slider
+            local Hit = new("TextButton", {
+                Position = UDim2.fromOffset(12, 44), Size = UDim2.new(1, -24, 0, 20),
+                BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+            }, Frame)
+            local Track = new("Frame", {
+                Position = UDim2.new(0, 0, 0.5, -2), Size = UDim2.new(1, 0, 0, 4),
+                BackgroundColor3 = WHITE, BackgroundTransparency = 0.75, BorderSizePixel = 0,
+            }, Hit)
+            corner(Track, 2)
+            local Fill = new("Frame", {
+                Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = ACCENT, BorderSizePixel = 0,
+            }, Track)
+            corner(Fill, 2)
+            local Knob = new("Frame", {
+                AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
+                Size = UDim2.fromOffset(12, 12), BackgroundColor3 = WHITE, BorderSizePixel = 0,
+            }, Hit)
+            corner(Knob, 6)
+
+            local TimeL = new("TextLabel", {
+                Position = UDim2.fromOffset(12, 64), Size = UDim2.fromOffset(80, 12),
+                BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 11,
+                TextColor3 = GRAY, TextXAlignment = Enum.TextXAlignment.Left, Text = "00:00",
+            }, Frame)
+            local TimeR = new("TextLabel", {
+                AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 64),
+                Size = UDim2.fromOffset(80, 12), BackgroundTransparency = 1,
+                Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = GRAY,
+                TextXAlignment = Enum.TextXAlignment.Right, Text = "00:00",
+            }, Frame)
+
+            local function ctrl(text, x, size)
+                return new("TextButton", {
+                    Text = text, Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = WHITE,
+                    BackgroundTransparency = 1, AutoButtonColor = false,
+                    Size = UDim2.fromOffset(size, size), AnchorPoint = Vector2.new(0.5, 0.5),
+                    Position = UDim2.new(x, 0, 0, 98),
+                }, Frame)
+            end
+            local RepBtn = ctrl("🔁", 0.14, 34)
+            local PrevBtn = ctrl("⏮", 0.32, 34)
+            local PlayBtn = ctrl("▶", 0.5, 40)
+            local NextBtn = ctrl("⏭", 0.68, 34)
+            local StopBtn = ctrl("⏹", 0.86, 34)
+            PlayBtn.BackgroundTransparency = 0
+            PlayBtn.BackgroundColor3 = WHITE
+            PlayBtn.TextColor3 = Color3.new(0, 0, 0)
+            corner(PlayBtn, 20)
+
+            -- ===== Utilidades =====
+            local function fmt(t)
+                t = math.max(0, math.floor(t or 0))
+                return string.format("%02d:%02d", math.floor(t / 60), t % 60)
+            end
+            local function setProgress(a)
+                a = math.clamp(a, 0, 1)
+                Fill.Size = UDim2.new(a, 0, 1, 0)
+                Knob.Position = UDim2.new(a, 0, 0.5, 0)
+            end
+
+            local nameCache = {}
+            local function getOriginalName(id, cb)
+                if nameCache[id] then cb(nameCache[id]) return end
+                task.spawn(function()
+                    local ok, info = pcall(function() return MPS:GetProductInfo(tonumber(id)) end)
+                    local n = (ok and info and info.Name) or "Nome indisponível"
+                    nameCache[id] = n
+                    cb(n)
+                end)
+            end
+
+            local function refresh()
+                local cur = State.Current
+                TitleLbl.Text = cur and cur.name or (Cfg.Title or "Nenhuma música")
+                SubLbl.Text = cur and State.Original or "Escolha uma música na lista"
+                PlayBtn.Text = State.Playing and "⏸" or "▶"
+                RepBtn.Text = State.Repeat == 2 and "🔂" or "🔁"
+                RepBtn.TextTransparency = State.Repeat == 0 and 0.6 or 0
+                ModeLbl.Text = State.Local and "LOCAL" or "REMOTE"
+                ModeLbl.TextColor3 = State.Local and GREEN or ACCENT
+            end
+
+            -- ===== API =====
+            local Music = {}
+
+            function Music:AddTrack(name, id)
+                table.insert(State.Queue, {name = name, id = tostring(id)})
+            end
+            function Music:ClearQueue() State.Queue = {}; State.Index = 0 end
+
+            function Music:Play(id, name, idx)
+                id = tostring(id)
+                State.Playing = false
+                Sound:Stop()
+
+                if not idx then
+                    for i, t in ipairs(State.Queue) do
+                        if t.id == id and (not name or t.name == name) then idx = i break end
+                    end
+                    if not idx then
+                        for i, t in ipairs(State.Queue) do
+                            if t.id == id then idx = i break end
+                        end
+                    end
+                end
+                State.Index = idx or 0
+                local tr = idx and State.Queue[idx]
+                State.Current = {id = id, name = name or (tr and tr.name) or ("ID " .. id)}
+                State.Original = "Carregando..."
+
+                Sound.SoundId = "rbxassetid://" .. id
+                Sound.TimePosition = 0
+                Sound.Volume = State.Local and 1 or 0
+                Sound:Play()
+                State.Playing = true
+                if not State.Local then RemotePlay(id) end
+
+                refresh()
+                getOriginalName(id, function(n)
+                    if State.Current and State.Current.id == id then
+                        State.Original = n
+                        refresh()
+                    end
+                end)
+            end
+
+            function Music:Stop()
+                State.Playing = false
+                Sound:Stop()
+                RemoteStop()
+                setProgress(0)
+                TimeL.Text = "00:00"
+                refresh()
+            end
+
+            function Music:Toggle()
+                if not State.Current then
+                    local t = State.Queue[1]
+                    if t then Music:Play(t.id, t.name, 1) end
+                    return
+                end
+                if State.Playing then
+                    State.Playing = false
+                    Sound:Pause()
+                    if not State.Local then RemoteStop() end
+                else
+                    State.Playing = true
+                    if State.Local then
+                        Sound:Play()
+                    else -- remote não tem "continuar": recomeça a faixa
+                        Sound.TimePosition = 0
+                        Sound:Play()
+                        RemotePlay(State.Current.id)
+                    end
+                end
+                refresh()
+            end
+
+            function Music:Next()
+                local n = #State.Queue
+                if n == 0 then return end
+                local i = State.Index + 1
+                if i > n then i = 1 end
+                local t = State.Queue[i]
+                Music:Play(t.id, t.name, i)
+            end
+
+            function Music:Prev()
+                local n = #State.Queue
+                if n == 0 then return end
+                if State.Current and Sound.TimePosition > 3 then
+                    Music:Play(State.Current.id, State.Current.name, State.Index)
+                    return
+                end
+                local i = State.Index - 1
+                if i < 1 then i = n end
+                local t = State.Queue[i]
+                Music:Play(t.id, t.name, i)
+            end
+
+            -- true = som local (só você ouve) | false = usa os remotes
+            function Music:SetLocal(v)
+                State.Local = v and true or false
+                Sound.Volume = State.Local and 1 or 0
+                if State.Current and State.Playing then
+                    if State.Local then
+                        RemoteStop()
+                    else
+                        Sound.TimePosition = 0
+                        RemotePlay(State.Current.id)
+                    end
+                end
+                refresh()
+            end
+
+            function Music:SetRepeat(mode) State.Repeat = mode % 3; refresh() end
+            function Music:Visible(...) Funcs:ToggleVisible(Frame, ...) end
+            function Music:Destroy()
+                for _, c in ipairs(conns) do c:Disconnect() end
+                Sound:Destroy()
+                Frame:Destroy()
+            end
+
+            -- ===== Eventos =====
+            PlayBtn.MouseButton1Click:Connect(function() Music:Toggle() end)
+            NextBtn.MouseButton1Click:Connect(function() Music:Next() end)
+            PrevBtn.MouseButton1Click:Connect(function() Music:Prev() end)
+            StopBtn.MouseButton1Click:Connect(function() Music:Stop() end)
+            RepBtn.MouseButton1Click:Connect(function() Music:SetRepeat(State.Repeat + 1) end)
+
+            table.insert(conns, Sound.Ended:Connect(function()
+                if not State.Playing or not State.Current then return end
+                if State.Repeat == 2 then
+                    Music:Play(State.Current.id, State.Current.name, State.Index)
+                elseif State.Index > 0 and (State.Repeat == 1 or State.Index < #State.Queue) then
+                    Music:Next()
+                else
+                    State.Playing = false
+                    if not State.Local then RemoteStop() end
+                    refresh()
+                end
+            end))
+
+            -- Slider (seek só no modo local)
+            local sliding, lastAlpha = false, 0
+            local function isPress(i)
+                return i.UserInputType == Enum.UserInputType.MouseButton1
+                    or i.UserInputType == Enum.UserInputType.Touch
+            end
+            local function isMove(i)
+                return i.UserInputType == Enum.UserInputType.MouseMovement
+                    or i.UserInputType == Enum.UserInputType.Touch
+            end
+            local function preview(input)
+                local a = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+                setProgress(a)
+                TimeL.Text = fmt(a * Sound.TimeLength)
+                return a
+            end
+            Hit.InputBegan:Connect(function(input)
+                if isPress(input) then sliding = true; lastAlpha = preview(input) end
+            end)
+            table.insert(conns, UIS.InputChanged:Connect(function(input)
+                if sliding and isMove(input) then lastAlpha = preview(input) end
+            end))
+            table.insert(conns, UIS.InputEnded:Connect(function(input)
+                if sliding and isPress(input) then
+                    sliding = false
+                    if State.Local and Sound.TimeLength > 0 then
+                        Sound.TimePosition = lastAlpha * Sound.TimeLength
+                    end
+                end
+            end))
+
+            task.spawn(function()
+                while Frame.Parent do
+                    if not sliding then
+                        local len, pos = Sound.TimeLength, Sound.TimePosition
+                        setProgress(len > 0 and pos / len or 0)
+                        TimeL.Text = fmt(pos)
+                        TimeR.Text = fmt(len)
+                    end
+                    task.wait(0.1)
+                end
+            end)
+
+            refresh()
+            return Music
+        end
+
+
         function Tab:AddButton(Cfg)
             local BName = Cfg[1] or Cfg.Name or Cfg.Title or "Button!"
             local BDescription = Cfg.Desc or Cfg.Description or ""
