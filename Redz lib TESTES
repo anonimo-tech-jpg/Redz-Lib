@@ -2121,341 +2121,402 @@ function MyLibrary:MakeWindow(Configs)
             return Paragraph
         end
 
-        function Tab:AddMusicPlayer(Cfg)
-            Cfg = Cfg or {}
-            local UIS = game:GetService("UserInputService")
-            local SoundService = game:GetService("SoundService")
-            local MPS = game:GetService("MarketplaceService")
+function Tab:AddMusicPlayer(Cfg)
+    Cfg = Cfg or {}
+    local PTitle = Cfg.Title or Cfg.Name or Cfg[1] or "Nenhuma musica"
+    local PArtist = Cfg.Artist or Cfg.Desc or Cfg.Description or ""
 
-            local RemotePlay = Cfg.RemotePlay or function(id) end
-            local RemoteStop = Cfg.RemoteStop or function() end
+    local IMG = {
+        Play = "rbxassetid://8517323790",
+        Pause = "rbxassetid://130857109630735",
+        Previous = "rbxassetid://109754291227660",
+        Next = "rbxassetid://11283329347",
+        Repeat = "rbxassetid://121565343679841",
+        Stop = "rbxassetid://116155660929916",
+        RepeatOne = "rbxassetid://105201736549364",
+    }
 
-            local ACCENT = Color3.fromRGB(255, 200, 40)
-            local WHITE = Color3.fromRGB(255, 255, 255)
-            local GRAY = Color3.fromRGB(175, 172, 150)
-            local GREEN = Color3.fromRGB(90, 220, 120)
+    local function fire(name, ...)
+        local f = Cfg[name]
+        if type(f) == "function" then task.spawn(f, ...) end
+    end
 
-            local function new(class, props, parent)
-                local o = Instance.new(class)
-                for k, v in pairs(props) do o[k] = v end
-                o.Parent = parent
-                return o
-            end
-            local function corner(o, r) new("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
+    local function ParseMode(v)
+        if type(v) == "boolean" then return v end
+        if type(v) == "string" then return v:lower() == "local" end
+        return nil
+    end
 
-            -- ===== Estado =====
-            local State = {
-                Queue = {}, Index = 0, Current = nil, Original = "",
-                Playing = false, Local = false, Repeat = 0, -- 0 off | 1 lista | 2 faixa
-            }
-            local conns = {}
+    local cfgMode = ParseMode(Cfg.Mode)
+    local isLocal = cfgMode == true
+    local locked = cfgMode ~= nil and Cfg.Lock ~= false
 
-            local Sound = new("Sound", {
-                Name = "RedzMusicPlayer", Volume = 0, Looped = false,
-            }, SoundService)
+    local playing, repeatIdx = false, 1
+    local duration, position = 0, 0
+    local dragging, activeInput = false, nil
+    local RepeatStates = {"Off", "All", "One"}
+    local conns = {}
 
-            -- ===== UI =====
-            local Frame = new("Frame", {
-                Size = UDim2.new(1, -20, 0, 122),
-                BackgroundColor3 = WHITE, BorderSizePixel = 0,
-            }, Container)
-            corner(Frame, 8)
-            new("UIGradient", {
-                Color = ColorSequence.new(Color3.fromRGB(78, 68, 12), Color3.fromRGB(16, 14, 6)),
-                Rotation = 90,
-            }, Frame)
-            new("UIStroke", {Color = WHITE, Transparency = 0.88, Thickness = 1}, Frame)
+    local function FormatTime(t)
+        t = math.max(0, math.floor(t or 0))
+        return string.format("%02d:%02d", math.floor(t / 60), t % 60)
+    end
 
-            local TitleLbl = new("TextLabel", {
-                Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -92, 0, 20),
-                BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 15,
-                TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd, Text = Cfg.Title or "Nenhuma música",
-            }, Frame)
-            local SubLbl = new("TextLabel", {
-                Position = UDim2.fromOffset(12, 28), Size = UDim2.new(1, -24, 0, 16),
-                BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
-                TextColor3 = GRAY, TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd, Text = "Escolha uma música na lista",
-            }, Frame)
-            local ModeLbl = new("TextLabel", {
-                AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 10),
-                Size = UDim2.fromOffset(54, 16), BackgroundColor3 = Color3.new(0, 0, 0),
-                BackgroundTransparency = 0.6, Font = Enum.Font.GothamBold, TextSize = 10,
-                TextColor3 = ACCENT, Text = "REMOTE",
-            }, Frame)
-            corner(ModeLbl, 8)
+    ------------------------------------------------------------------
+    -- QUADRO PRINCIPAL (mesmo padrao dos outros componentes)
+    ------------------------------------------------------------------
+    local Frame = InsertTheme(Create("Frame", Container, {
+        Size = UDim2.new(1, 0, 0, 112),
+        BackgroundColor3 = Theme["Color Hub 2"],
+        Name = "Option"
+    }), "Frame")
+    AddTransparency(Frame)
+    Make("Corner", Frame, UDim.new(0, 6))
+    ApplyBorder(Frame)
 
-            -- Slider
-            local Hit = new("TextButton", {
-                Position = UDim2.fromOffset(12, 44), Size = UDim2.new(1, -24, 0, 20),
-                BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
-            }, Frame)
-            local Track = new("Frame", {
-                Position = UDim2.new(0, 0, 0.5, -2), Size = UDim2.new(1, 0, 0, 4),
-                BackgroundColor3 = WHITE, BackgroundTransparency = 0.75, BorderSizePixel = 0,
-            }, Hit)
-            corner(Track, 2)
-            local Fill = new("Frame", {
-                Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = ACCENT, BorderSizePixel = 0,
-            }, Track)
-            corner(Fill, 2)
-            local Knob = new("Frame", {
-                AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
-                Size = UDim2.fromOffset(12, 12), BackgroundColor3 = WHITE, BorderSizePixel = 0,
-            }, Hit)
-            corner(Knob, 6)
+    local TitleLabel = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(1, -120, 0, 16),
+        Position = UDim2.new(0, 10, 0, 6),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = PTitle,
+        TextColor3 = Theme["Color Text"],
+        TextSize = 12,
+        TextXAlignment = "Left",
+        TextTruncate = "AtEnd"
+    }), "Text")
 
-            local TimeL = new("TextLabel", {
-                Position = UDim2.fromOffset(12, 64), Size = UDim2.fromOffset(80, 12),
-                BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 11,
-                TextColor3 = GRAY, TextXAlignment = Enum.TextXAlignment.Left, Text = "00:00",
-            }, Frame)
-            local TimeR = new("TextLabel", {
-                AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 64),
-                Size = UDim2.fromOffset(80, 12), BackgroundTransparency = 1,
-                Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = GRAY,
-                TextXAlignment = Enum.TextXAlignment.Right, Text = "00:00",
-            }, Frame)
+    local ArtistLabel = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(1, -120, 0, 12),
+        Position = UDim2.new(0, 10, 0, 23),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = PArtist,
+        TextColor3 = Theme["Color Dark Text"],
+        TextSize = 9,
+        TextXAlignment = "Left",
+        TextTruncate = "AtEnd"
+    }), "DarkText")
 
-            local function ctrl(text, x, size)
-                return new("TextButton", {
-                    Text = text, Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = WHITE,
-                    BackgroundTransparency = 1, AutoButtonColor = false,
-                    Size = UDim2.fromOffset(size, size), AnchorPoint = Vector2.new(0.5, 0.5),
-                    Position = UDim2.new(x, 0, 0, 98),
-                }, Frame)
-            end
-            local RepBtn = ctrl("🔁", 0.14, 34)
-            local PrevBtn = ctrl("⏮", 0.32, 34)
-            local PlayBtn = ctrl("▶", 0.5, 40)
-            local NextBtn = ctrl("⏭", 0.68, 34)
-            local StopBtn = ctrl("⏹", 0.86, 34)
-            PlayBtn.BackgroundTransparency = 0
-            PlayBtn.BackgroundColor3 = WHITE
-            PlayBtn.TextColor3 = Color3.new(0, 0, 0)
-            corner(PlayBtn, 20)
+    ------------------------------------------------------------------
+    -- TOGGLE REMOTE / LOCAL
+    ------------------------------------------------------------------
+    local ModeArea = Create("Frame", Frame, {
+        Size = UDim2.new(0, 100, 0, 16),
+        Position = UDim2.new(1, -10, 0, 8),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1
+    })
 
-            -- ===== Utilidades =====
-            local function fmt(t)
-                t = math.max(0, math.floor(t or 0))
-                return string.format("%02d:%02d", math.floor(t / 60), t % 60)
-            end
-            local function setProgress(a)
-                a = math.clamp(a, 0, 1)
-                Fill.Size = UDim2.new(a, 0, 1, 0)
-                Knob.Position = UDim2.new(a, 0, 0.5, 0)
-            end
+    local ModeLabel = InsertTheme(Create("TextLabel", ModeArea, {
+        Size = UDim2.new(1, -32, 1, 0),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = "REMOTE",
+        TextColor3 = Theme["Color Theme"],
+        TextSize = 10,
+        TextXAlignment = "Right"
+    }), "Theme")
 
-            local nameCache = {}
-            local function getOriginalName(id, cb)
-                if nameCache[id] then cb(nameCache[id]) return end
-                task.spawn(function()
-                    local ok, info = pcall(function() return MPS:GetProductInfo(tonumber(id)) end)
-                    local n = (ok and info and info.Name) or "Nome indisponível"
-                    nameCache[id] = n
-                    cb(n)
-                end)
-            end
+    local ModeHolder = InsertTheme(Create("Frame", ModeArea, {
+        Size = UDim2.new(0, 26, 0, 13),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = Theme["Color Stroke"]
+    }), "Stroke")
+    AddTransparency(ModeHolder)
+    Make("Corner", ModeHolder, UDim.new(0.5, 0))
 
-            local function refresh()
-                local cur = State.Current
-                TitleLbl.Text = cur and cur.name or (Cfg.Title or "Nenhuma música")
-                SubLbl.Text = cur and State.Original or "Escolha uma música na lista"
-                PlayBtn.Text = State.Playing and "⏸" or "▶"
-                RepBtn.Text = State.Repeat == 2 and "🔂" or "🔁"
-                RepBtn.TextTransparency = State.Repeat == 0 and 0.6 or 0
-                ModeLbl.Text = State.Local and "LOCAL" or "REMOTE"
-                ModeLbl.TextColor3 = State.Local and GREEN or ACCENT
-            end
+    local ModeSlider = Create("Frame", ModeHolder, {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0.8, 0, 0.8, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5)
+    })
 
-            -- ===== API =====
-            local Music = {}
+    local ModeKnob = InsertTheme(Create("Frame", ModeSlider, {
+        Size = UDim2.new(0, 9, 0, 9),
+        Position = UDim2.new(0, 0, 0.5),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = Theme["Color Theme"],
+        BackgroundTransparency = 0.8
+    }), "Theme")
+    Make("Corner", ModeKnob, UDim.new(0.5, 0))
 
-            function Music:AddTrack(name, id)
-                table.insert(State.Queue, {name = name, id = tostring(id)})
-            end
-            function Music:ClearQueue() State.Queue = {}; State.Index = 0 end
+    local ModeButton = Create("TextButton", ModeArea, {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+        ZIndex = 5
+    })
 
-            function Music:Play(id, name, idx)
-                id = tostring(id)
-                State.Playing = false
-                Sound:Stop()
-
-                if not idx then
-                    for i, t in ipairs(State.Queue) do
-                        if t.id == id and (not name or t.name == name) then idx = i break end
-                    end
-                    if not idx then
-                        for i, t in ipairs(State.Queue) do
-                            if t.id == id then idx = i break end
-                        end
-                    end
-                end
-                State.Index = idx or 0
-                local tr = idx and State.Queue[idx]
-                State.Current = {id = id, name = name or (tr and tr.name) or ("ID " .. id)}
-                State.Original = "Carregando..."
-
-                Sound.SoundId = "rbxassetid://" .. id
-                Sound.TimePosition = 0
-                Sound.Volume = State.Local and 1 or 0
-                Sound:Play()
-                State.Playing = true
-                if not State.Local then RemotePlay(id) end
-
-                refresh()
-                getOriginalName(id, function(n)
-                    if State.Current and State.Current.id == id then
-                        State.Original = n
-                        refresh()
-                    end
-                end)
-            end
-
-            function Music:Stop()
-                State.Playing = false
-                Sound:Stop()
-                RemoteStop()
-                setProgress(0)
-                TimeL.Text = "00:00"
-                refresh()
-            end
-
-            function Music:Toggle()
-                if not State.Current then
-                    local t = State.Queue[1]
-                    if t then Music:Play(t.id, t.name, 1) end
-                    return
-                end
-                if State.Playing then
-                    State.Playing = false
-                    Sound:Pause()
-                    if not State.Local then RemoteStop() end
-                else
-                    State.Playing = true
-                    if State.Local then
-                        Sound:Play()
-                    else -- remote não tem "continuar": recomeça a faixa
-                        Sound.TimePosition = 0
-                        Sound:Play()
-                        RemotePlay(State.Current.id)
-                    end
-                end
-                refresh()
-            end
-
-            function Music:Next()
-                local n = #State.Queue
-                if n == 0 then return end
-                local i = State.Index + 1
-                if i > n then i = 1 end
-                local t = State.Queue[i]
-                Music:Play(t.id, t.name, i)
-            end
-
-            function Music:Prev()
-                local n = #State.Queue
-                if n == 0 then return end
-                if State.Current and Sound.TimePosition > 3 then
-                    Music:Play(State.Current.id, State.Current.name, State.Index)
-                    return
-                end
-                local i = State.Index - 1
-                if i < 1 then i = n end
-                local t = State.Queue[i]
-                Music:Play(t.id, t.name, i)
-            end
-
-            -- true = som local (só você ouve) | false = usa os remotes
-            function Music:SetLocal(v)
-                State.Local = v and true or false
-                Sound.Volume = State.Local and 1 or 0
-                if State.Current and State.Playing then
-                    if State.Local then
-                        RemoteStop()
-                    else
-                        Sound.TimePosition = 0
-                        RemotePlay(State.Current.id)
-                    end
-                end
-                refresh()
-            end
-
-            function Music:SetRepeat(mode) State.Repeat = mode % 3; refresh() end
-            function Music:Visible(...) Funcs:ToggleVisible(Frame, ...) end
-            function Music:Destroy()
-                for _, c in ipairs(conns) do c:Disconnect() end
-                Sound:Destroy()
-                Frame:Destroy()
-            end
-
-            -- ===== Eventos =====
-            PlayBtn.MouseButton1Click:Connect(function() Music:Toggle() end)
-            NextBtn.MouseButton1Click:Connect(function() Music:Next() end)
-            PrevBtn.MouseButton1Click:Connect(function() Music:Prev() end)
-            StopBtn.MouseButton1Click:Connect(function() Music:Stop() end)
-            RepBtn.MouseButton1Click:Connect(function() Music:SetRepeat(State.Repeat + 1) end)
-
-            table.insert(conns, Sound.Ended:Connect(function()
-                if not State.Playing or not State.Current then return end
-                if State.Repeat == 2 then
-                    Music:Play(State.Current.id, State.Current.name, State.Index)
-                elseif State.Index > 0 and (State.Repeat == 1 or State.Index < #State.Queue) then
-                    Music:Next()
-                else
-                    State.Playing = false
-                    if not State.Local then RemoteStop() end
-                    refresh()
-                end
-            end))
-
-            -- Slider (seek só no modo local)
-            local sliding, lastAlpha = false, 0
-            local function isPress(i)
-                return i.UserInputType == Enum.UserInputType.MouseButton1
-                    or i.UserInputType == Enum.UserInputType.Touch
-            end
-            local function isMove(i)
-                return i.UserInputType == Enum.UserInputType.MouseMovement
-                    or i.UserInputType == Enum.UserInputType.Touch
-            end
-            local function preview(input)
-                local a = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
-                setProgress(a)
-                TimeL.Text = fmt(a * Sound.TimeLength)
-                return a
-            end
-            Hit.InputBegan:Connect(function(input)
-                if isPress(input) then sliding = true; lastAlpha = preview(input) end
-            end)
-            table.insert(conns, UIS.InputChanged:Connect(function(input)
-                if sliding and isMove(input) then lastAlpha = preview(input) end
-            end))
-            table.insert(conns, UIS.InputEnded:Connect(function(input)
-                if sliding and isPress(input) then
-                    sliding = false
-                    if State.Local and Sound.TimeLength > 0 then
-                        Sound.TimePosition = lastAlpha * Sound.TimeLength
-                    end
-                end
-            end))
-
-            task.spawn(function()
-                while Frame.Parent do
-                    if not sliding then
-                        local len, pos = Sound.TimeLength, Sound.TimePosition
-                        setProgress(len > 0 and pos / len or 0)
-                        TimeL.Text = fmt(pos)
-                        TimeR.Text = fmt(len)
-                    end
-                    task.wait(0.1)
-                end
-            end)
-
-            refresh()
-            return Music
+    local function UpdateModeUI(instant)
+        ModeLabel.Text = isLocal and "LOCAL" or "REMOTE"
+        ModeLabel.TextTransparency = locked and 0.4 or 0
+        local pos = isLocal and UDim2.new(1, 0, 0.5) or UDim2.new(0, 0, 0.5)
+        local anchor = isLocal and Vector2.new(1, 0.5) or Vector2.new(0, 0.5)
+        local transp = isLocal and 0 or 0.8
+        if instant then
+            ModeKnob.Position, ModeKnob.AnchorPoint, ModeKnob.BackgroundTransparency = pos, anchor, transp
+        else
+            CreateTween({ModeKnob, "Position", pos, 0.25})
+            CreateTween({ModeKnob, "AnchorPoint", anchor, 0.25})
+            CreateTween({ModeKnob, "BackgroundTransparency", transp, 0.25})
         end
+    end
+    UpdateModeUI(true)
+
+    ModeButton.Activated:Connect(function()
+        if locked then return end -- modo travado na criacao: nao muda pelo toggle
+        isLocal = not isLocal
+        UpdateModeUI()
+        fire("OnModeChanged", isLocal)
+    end)
+
+    ------------------------------------------------------------------
+    -- BARRA DE PROGRESSO
+    ------------------------------------------------------------------
+    local SliderHolder = Create("TextButton", Frame, {
+        Size = UDim2.new(1, -20, 0, 16),
+        Position = UDim2.new(0, 10, 0, 40),
+        BackgroundTransparency = 1,
+        AutoButtonColor = false,
+        Text = ""
+    })
+
+    local SliderBar = InsertTheme(Create("Frame", SliderHolder, {
+        BackgroundColor3 = Theme["Color Stroke"],
+        Size = UDim2.new(1, 0, 0, 5),
+        Position = UDim2.new(0.5, 0, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5)
+    }), "Stroke")
+    AddTransparency(SliderBar)
+    Make("Corner", SliderBar)
+
+    local Indicator = InsertTheme(Create("Frame", SliderBar, {
+        BackgroundColor3 = Theme["Color Theme"],
+        Size = UDim2.fromScale(0, 1),
+        BorderSizePixel = 0
+    }), "Theme")
+    Make("Corner", Indicator)
+
+    local SliderIcon = Create("Frame", SliderBar, {
+        Size = UDim2.new(0, 6, 0, 12),
+        BackgroundColor3 = Color3.fromRGB(220, 220, 220),
+        Position = UDim2.fromScale(0, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 0.2
+    })
+    Make("Corner", SliderIcon)
+
+    local CurTime = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(0, 45, 0, 10),
+        Position = UDim2.new(0, 10, 0, 57),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = "00:00",
+        TextColor3 = Theme["Color Dark Text"],
+        TextSize = 8,
+        TextXAlignment = "Left"
+    }), "DarkText")
+
+    local TotTime = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(0, 45, 0, 10),
+        Position = UDim2.new(1, -10, 0, 57),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = "00:00",
+        TextColor3 = Theme["Color Dark Text"],
+        TextSize = 8,
+        TextXAlignment = "Right"
+    }), "DarkText")
+
+    local function SetBarVisual(f)
+        f = math.clamp(f, 0, 1)
+        Indicator.Size = UDim2.new(f, 0, 1, 0)
+        SliderIcon.Position = UDim2.new(f, 0, 0.5, 0)
+    end
+
+    local function UpdateProgress(pos, dur)
+        if type(dur) == "number" then duration = math.max(0, dur) end
+        if type(pos) == "number" then position = math.clamp(pos, 0, duration > 0 and duration or math.huge) end
+        TotTime.Text = FormatTime(duration)
+        if dragging then return end
+        CurTime.Text = FormatTime(position)
+        SetBarVisual(duration > 0 and position / duration or 0)
+    end
+
+    local function FractionFromX(x)
+        local w = math.max(SliderBar.AbsoluteSize.X, 1)
+        return math.clamp((x - SliderBar.AbsolutePosition.X) / w, 0, 1)
+    end
+
+    SliderHolder.InputBegan:Connect(function(Input)
+        if not IsPress(Input) then return end
+        dragging, activeInput = true, Input
+        Container.ScrollingEnabled = false
+        local f = FractionFromX(Input.Position.X)
+        SetBarVisual(f)
+        CurTime.Text = FormatTime(f * duration)
+    end)
+
+    table.insert(conns, Track(UserInputService.InputChanged:Connect(function(Input)
+        if not dragging then return end
+        if Input.UserInputType == Enum.UserInputType.MouseMovement
+            or (Input.UserInputType == Enum.UserInputType.Touch and Input == activeInput) then
+            local f = FractionFromX(Input.Position.X)
+            SetBarVisual(f)
+            CurTime.Text = FormatTime(f * duration)
+        end
+    end)))
+
+    table.insert(conns, Track(UserInputService.InputEnded:Connect(function(Input)
+        if dragging and (Input == activeInput or Input.UserInputType == Enum.UserInputType.MouseButton1) then
+            dragging, activeInput = false, nil
+            Container.ScrollingEnabled = true
+            local f = math.clamp(SliderIcon.Position.X.Scale, 0, 1)
+            position = f * duration
+            CurTime.Text = FormatTime(position)
+            fire("OnSeek", position)
+        end
+    end)))
+
+    ------------------------------------------------------------------
+    -- BOTOES (imagens)
+    ------------------------------------------------------------------
+    local Row = Create("Frame", Frame, {
+        Size = UDim2.new(1, 0, 0, 36),
+        Position = UDim2.new(0, 0, 0, 71),
+        BackgroundTransparency = 1
+    }, {
+        Create("UIListLayout", {
+            FillDirection = "Horizontal",
+            HorizontalAlignment = "Center",
+            VerticalAlignment = "Center",
+            SortOrder = "LayoutOrder",
+            Padding = UDim.new(0, 14)
+        })
+    })
+
+    local function IconButton(order, image, size)
+        local btn = InsertTheme(Create("ImageButton", Row, {
+            Size = UDim2.fromOffset(size, size),
+            BackgroundTransparency = 1,
+            AutoButtonColor = false,
+            Image = image,
+            ImageColor3 = Theme["Color Text"],
+            LayoutOrder = order
+        }), "Text")
+        return btn
+    end
+
+    local RepeatBtn = IconButton(1, IMG.Repeat, 20)
+    local PrevBtn = IconButton(2, IMG.Previous, 22)
+
+    -- Play/Pause: circulo tematico + icone
+    local PlayCircle = InsertTheme(Create("Frame", Row, {
+        Size = UDim2.fromOffset(34, 34),
+        BackgroundColor3 = Theme["Color Stroke"],
+        LayoutOrder = 3
+    }), "Stroke")
+    AddTransparency(PlayCircle)
+    Make("Corner", PlayCircle, UDim.new(0.5, 0))
+    ApplyBorder(PlayCircle)
+
+    local PlayIcon = InsertTheme(Create("ImageLabel", PlayCircle, {
+        Size = UDim2.fromOffset(18, 18),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 1,
+        Image = IMG.Play,
+        ImageColor3 = Theme["Color Text"]
+    }), "Text")
+
+    local PlayBtn = Create("TextButton", PlayCircle, {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text = "",
+        ZIndex = 5
+    })
+
+    local NextBtn = IconButton(4, IMG.Next, 22)
+    local StopBtn = IconButton(5, IMG.Stop, 20)
+
+    local function UpdatePlayIcon()
+        PlayIcon.Image = playing and IMG.Pause or IMG.Play
+    end
+
+    local function UpdateRepeatUI()
+        local state = RepeatStates[repeatIdx]
+        RepeatBtn.Image = state == "One" and IMG.RepeatOne or IMG.Repeat
+        CreateTween({RepeatBtn, "ImageTransparency", state == "Off" and 0.6 or 0, 0.2})
+    end
+    UpdateRepeatUI()
+
+    PlayBtn.Activated:Connect(function()
+        playing = not playing
+        UpdatePlayIcon()
+        fire(playing and "OnPlay" or "OnPause")
+    end)
+
+    PrevBtn.Activated:Connect(function() fire("OnPrevious") end)
+    NextBtn.Activated:Connect(function() fire("OnNext") end)
+
+    StopBtn.Activated:Connect(function()
+        playing = false
+        UpdatePlayIcon()
+        UpdateProgress(0)
+        fire("OnStop")
+    end)
+
+    RepeatBtn.Activated:Connect(function()
+        repeatIdx = repeatIdx % #RepeatStates + 1
+        UpdateRepeatUI()
+        fire("OnRepeat", RepeatStates[repeatIdx])
+    end)
+
+    UpdateProgress(0, 0)
+
+    ------------------------------------------------------------------
+    -- API
+    ------------------------------------------------------------------
+    local MusicPlayer = {}
+    function MusicPlayer:SetTitle(t) TitleLabel.Text = tostring(GetStr(t) or "") end
+    function MusicPlayer:SetArtist(t) ArtistLabel.Text = tostring(GetStr(t) or "") end
+    function MusicPlayer:SetProgress(pos, dur) UpdateProgress(pos, dur) end
+    function MusicPlayer:SetDuration(dur) UpdateProgress(nil, dur) end
+    function MusicPlayer:SetPlaying(v)
+        playing = v == true
+        UpdatePlayIcon()
+    end
+    function MusicPlayer:IsPlaying() return playing end
+    function MusicPlayer:SetRepeat(state)
+        local idx = table.find(RepeatStates, state)
+        if idx then
+            repeatIdx = idx
+            UpdateRepeatUI()
+        end
+    end
+    function MusicPlayer:GetRepeat() return RepeatStates[repeatIdx] end
+    function MusicPlayer:SetMode(m)
+        local v = ParseMode(m)
+        if v == nil then return end
+        isLocal = v
+        UpdateModeUI()
+    end
+    function MusicPlayer:GetMode() return isLocal and "Local" or "Remote" end
+    function MusicPlayer:IsLocal() return isLocal end
+    function MusicPlayer:IsLocked() return locked end
+    function MusicPlayer:Visible(...) Funcs:ToggleVisible(Frame, ...) end
+    function MusicPlayer:Destroy()
+        for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+        Frame:Destroy()
+    end
+
+    return MusicPlayer
+end
+
 
 
         function Tab:AddButton(Cfg)
