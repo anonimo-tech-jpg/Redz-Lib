@@ -2121,6 +2121,686 @@ function MyLibrary:MakeWindow(Configs)
             return Paragraph
         end
 
+function Tab:AddMusicPlayer(Cfg)
+    Cfg = Cfg or {}
+    local PTitle = Cfg.Title or Cfg.Name or Cfg[1] or "Music Player"
+    local PArtist = Cfg.Artist or Cfg.Desc or Cfg.Description or ""
+
+    local IMG = {
+        Play = "rbxassetid://8517323790",
+        Pause = "rbxassetid://130857109630735",
+        Previous = "rbxassetid://18802845025",
+        Next = "rbxassetid://11283329347",
+        Repeat = "rbxassetid://121565343679841",
+        Stop = "rbxassetid://116155660929916",
+        RepeatOne = "rbxassetid://101892266050705",
+    }
+
+    local function fire(name, ...)
+        local f = Cfg[name]
+        if type(f) == "function" then task.spawn(f, ...) end
+    end
+
+    local function ParseMode(v)
+        if type(v) == "boolean" then return v end
+        if type(v) == "string" then return v:lower() == "local" end
+        return nil
+    end
+
+    local function SnapVol(v)
+        v = tonumber(v) or 50
+        return math.clamp(math.floor(v / 5 + 0.5) * 5, 5, 100)
+    end
+
+    local function CleanId(id)
+        return (tostring(id):gsub("rbxassetid://", ""):gsub("%s", ""))
+    end
+
+    local function FormatTime(t)
+        t = math.max(0, math.floor(t or 0))
+        return string.format("%02d:%02d", math.floor(t / 60), t % 60)
+    end
+
+    -- estado
+    local cfgMode = ParseMode(Cfg.Mode)
+    local isLocal = cfgMode == true
+    local locked = cfgMode ~= nil and Cfg.Lock ~= false
+    local volume = SnapVol(Cfg.Volume or 50)
+    local playing, stopped = false, true
+    local repeatIdx = 1
+    local RepeatStates = {"Off", "All", "One"}
+    local current, tracks = nil, {}
+    local duration, position = 0, 0
+    local conns = {}
+
+-- som (criado novo a cada musica)
+local Snd, endConn
+
+local function ApplyVolume()
+    if Snd then Snd.Volume = isLocal and (volume / 100) or 0 end
+end
+
+    ------------------------------------------------------------------
+    -- QUADRO
+    ------------------------------------------------------------------
+    local Frame = InsertTheme(Create("Frame", Container, {
+        Size = UDim2.new(1, 0, 0, 134),
+        BackgroundColor3 = Theme["Color Hub 2"],
+        Name = "Option"
+    }), "Frame")
+    AddTransparency(Frame)
+    Make("Corner", Frame, UDim.new(0, 6))
+    ApplyBorder(Frame)
+
+    local TitleLabel = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(1, -120, 0, 16),
+        Position = UDim2.new(0, 10, 0, 6),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = PTitle,
+        TextColor3 = Theme["Color Text"],
+        TextSize = 12,
+        TextXAlignment = "Left",
+        TextTruncate = "AtEnd"
+    }), "Text")
+
+    local ArtistLabel = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(1, -120, 0, 12),
+        Position = UDim2.new(0, 10, 0, 23),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = PArtist,
+        TextColor3 = Theme["Color Dark Text"],
+        TextSize = 9,
+        TextXAlignment = "Left",
+        TextTruncate = "AtEnd"
+    }), "DarkText")
+
+    ------------------------------------------------------------------
+    -- TOGGLE REMOTE / LOCAL
+    ------------------------------------------------------------------
+    local ApplyMode -- definido mais abaixo
+
+    local ModeArea = Create("Frame", Frame, {
+        Size = UDim2.new(0, 100, 0, 16),
+        Position = UDim2.new(1, -10, 0, 8),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1
+    })
+
+    local ModeLabel = InsertTheme(Create("TextLabel", ModeArea, {
+        Size = UDim2.new(1, -32, 1, 0),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = "REMOTE",
+        TextColor3 = Theme["Color Theme"],
+        TextSize = 10,
+        TextXAlignment = "Right"
+    }), "Theme")
+
+    local ModeHolder = InsertTheme(Create("Frame", ModeArea, {
+        Size = UDim2.new(0, 26, 0, 13),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = Theme["Color Stroke"]
+    }), "Stroke")
+    AddTransparency(ModeHolder)
+    Make("Corner", ModeHolder, UDim.new(0.5, 0))
+
+    local ModeSlider = Create("Frame", ModeHolder, {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0.8, 0, 0.8, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5)
+    })
+
+    local ModeKnob = InsertTheme(Create("Frame", ModeSlider, {
+        Size = UDim2.new(0, 9, 0, 9),
+        Position = UDim2.new(0, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = Theme["Color Theme"],
+        BackgroundTransparency = 0.8
+    }), "Theme")
+    Make("Corner", ModeKnob, UDim.new(0.5, 0))
+
+    local ModeButton = Create("TextButton", ModeArea, {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+        ZIndex = 5
+    })
+
+    local function UpdateModeUI(instant)
+        ModeLabel.Text = isLocal and "Free(local)" or "Gamepass"
+        ModeLabel.TextTransparency = locked and 0.4 or 0
+        local pos = isLocal and UDim2.new(1, 0, 0.5, 0) or UDim2.new(0, 0, 0.5, 0)
+        local anchor = isLocal and Vector2.new(1, 0.5) or Vector2.new(0, 0.5)
+        local transp = isLocal and 0 or 0.8
+        if instant then
+            ModeKnob.Position, ModeKnob.AnchorPoint, ModeKnob.BackgroundTransparency = pos, anchor, transp
+        else
+            CreateTween({ModeKnob, "Position", pos, 0.25})
+            CreateTween({ModeKnob, "AnchorPoint", anchor, 0.25})
+            CreateTween({ModeKnob, "BackgroundTransparency", transp, 0.25})
+        end
+    end
+    UpdateModeUI(true)
+
+    ModeButton.Activated:Connect(function()
+        if locked then return end -- modo travado na criacao
+        ApplyMode(not isLocal)
+    end)
+
+    ------------------------------------------------------------------
+    -- BARRAS (progresso e volume)
+    ------------------------------------------------------------------
+    local function MakeBar(Parent, Pos, Size)
+        local Holder = Create("TextButton", Parent, {
+            Size = Size,
+            Position = Pos,
+            BackgroundTransparency = 1,
+            AutoButtonColor = false,
+            Text = ""
+        })
+        local Bar = InsertTheme(Create("Frame", Holder, {
+            BackgroundColor3 = Theme["Color Stroke"],
+            Size = UDim2.new(1, 0, 0, 5),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5)
+        }), "Stroke")
+        AddTransparency(Bar)
+        Make("Corner", Bar)
+
+        local Ind = InsertTheme(Create("Frame", Bar, {
+            BackgroundColor3 = Theme["Color Theme"],
+            Size = UDim2.fromScale(0, 1),
+            BorderSizePixel = 0
+        }), "Theme")
+        Make("Corner", Ind)
+
+        local Icon = Create("Frame", Bar, {
+            Size = UDim2.new(0, 6, 0, 12),
+            BackgroundColor3 = Color3.fromRGB(220, 220, 220),
+            Position = UDim2.fromScale(0, 0.5),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 0.2
+        })
+        Make("Corner", Icon)
+
+        local function SetVisual(f)
+            f = math.clamp(f, 0, 1)
+            Ind.Size = UDim2.new(f, 0, 1, 0)
+            Icon.Position = UDim2.new(f, 0, 0.5, 0)
+        end
+        return Holder, Bar, SetVisual
+    end
+
+    local function BindBar(Holder, Bar, OnMove, OnEnd)
+        local state = {dragging = false}
+        local act, last = nil, 0
+
+        local function frac(x)
+            return math.clamp((x - Bar.AbsolutePosition.X) / math.max(Bar.AbsoluteSize.X, 1), 0, 1)
+        end
+
+        Holder.InputBegan:Connect(function(Input)
+            if not IsPress(Input) then return end
+            state.dragging, act = true, Input
+            Container.ScrollingEnabled = false
+            last = frac(Input.Position.X)
+            OnMove(last)
+        end)
+
+        table.insert(conns, Track(UserInputService.InputChanged:Connect(function(Input)
+            if not state.dragging then return end
+            if Input.UserInputType == Enum.UserInputType.MouseMovement
+                or (Input.UserInputType == Enum.UserInputType.Touch and Input == act) then
+                last = frac(Input.Position.X)
+                OnMove(last)
+            end
+        end)))
+
+        table.insert(conns, Track(UserInputService.InputEnded:Connect(function(Input)
+            if state.dragging and (Input == act or Input.UserInputType == Enum.UserInputType.MouseButton1) then
+                state.dragging, act = false, nil
+                Container.ScrollingEnabled = true
+                OnEnd(last)
+            end
+        end)))
+
+        return state
+    end
+
+    -- progresso
+    local ProgHolder, ProgBar, SetProgVisual = MakeBar(Frame, UDim2.new(0, 10, 0, 40), UDim2.new(1, -20, 0, 16))
+    local ProgState
+
+    local CurTime = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(0, 45, 0, 10),
+        Position = UDim2.new(0, 10, 0, 57),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = "00:00",
+        TextColor3 = Theme["Color Dark Text"],
+        TextSize = 8,
+        TextXAlignment = "Left"
+    }), "DarkText")
+
+    local TotTime = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(0, 45, 0, 10),
+        Position = UDim2.new(1, -10, 0, 57),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = "00:00",
+        TextColor3 = Theme["Color Dark Text"],
+        TextSize = 8,
+        TextXAlignment = "Right"
+    }), "DarkText")
+
+    local function UpdateProgress(pos, dur)
+        duration = math.max(0, dur or duration)
+        position = math.clamp(pos or position, 0, duration)
+        TotTime.Text = FormatTime(duration)
+        if ProgState and ProgState.dragging then return end
+        CurTime.Text = FormatTime(position)
+        SetProgVisual(duration > 0 and position / duration or 0)
+    end
+
+    -- volume
+    InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(0, 28, 0, 16),
+        Position = UDim2.new(0, 10, 0, 112),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = "VOL",
+        TextColor3 = Theme["Color Dark Text"],
+        TextSize = 9,
+        TextXAlignment = "Left"
+    }), "DarkText")
+
+    local VolValue = InsertTheme(Create("TextLabel", Frame, {
+        Size = UDim2.new(0, 34, 0, 16),
+        Position = UDim2.new(1, -10, 0, 112),
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Font = MyLibrary.CurrentFont,
+        Text = tostring(volume),
+        TextColor3 = Theme["Color Text"],
+        TextSize = 9,
+        TextXAlignment = "Right"
+    }), "Text")
+
+    local VolHolder, VolBar, SetVolVisual = MakeBar(Frame, UDim2.new(0, 40, 0, 112), UDim2.new(1, -90, 0, 16))
+
+    local function SetVolume(v)
+        volume = SnapVol(v)
+        VolValue.Text = tostring(volume)
+        SetVolVisual((volume - 5) / 95)
+        ApplyVolume()
+    end
+    SetVolume(volume)
+
+    BindBar(VolHolder, VolBar,
+        function(f) SetVolume(5 + math.floor(f * 19 + 0.5) * 5) end,
+        function()
+            if not isLocal then fire("RemoteVolume", volume) end
+            fire("OnVolume", volume)
+        end
+    )
+
+    ------------------------------------------------------------------
+    -- BOTOES
+    ------------------------------------------------------------------
+    local Row = Create("Frame", Frame, {
+        Size = UDim2.new(1, 0, 0, 36),
+        Position = UDim2.new(0, 0, 0, 71),
+        BackgroundTransparency = 1
+    }, {
+        Create("UIListLayout", {
+            FillDirection = "Horizontal",
+            HorizontalAlignment = "Center",
+            VerticalAlignment = "Center",
+            SortOrder = "LayoutOrder",
+            Padding = UDim.new(0, 14)
+        })
+    })
+
+    local function IconButton(order, image, size)
+        return InsertTheme(Create("ImageButton", Row, {
+            Size = UDim2.fromOffset(size, size),
+            BackgroundTransparency = 1,
+            AutoButtonColor = false,
+            Image = image,
+            ImageColor3 = Theme["Color Text"],
+            LayoutOrder = order
+        }), "Text")
+    end
+
+    local RepeatBtn = IconButton(1, IMG.Repeat, 20)
+    local PrevBtn = IconButton(2, IMG.Previous, 22)
+
+    local PlayCircle = InsertTheme(Create("Frame", Row, {
+        Size = UDim2.fromOffset(34, 34),
+        BackgroundColor3 = Theme["Color Stroke"],
+        LayoutOrder = 3
+    }), "Stroke")
+    AddTransparency(PlayCircle)
+    Make("Corner", PlayCircle, UDim.new(0.5, 0))
+    ApplyBorder(PlayCircle)
+
+    local PlayIcon = InsertTheme(Create("ImageLabel", PlayCircle, {
+        Size = UDim2.fromOffset(18, 18),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 1,
+        Image = IMG.Play,
+        ImageColor3 = Theme["Color Text"]
+    }), "Text")
+
+    local PlayBtn = Create("TextButton", PlayCircle, {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text = "",
+        ZIndex = 5
+    })
+
+    local NextBtn = IconButton(4, IMG.Next, 22)
+    local StopBtn = IconButton(5, IMG.Stop, 20)
+
+    local function UpdatePlayIcon()
+        PlayIcon.Image = playing and IMG.Pause or IMG.Play
+    end
+
+    local function UpdateRepeatUI()
+        local state = RepeatStates[repeatIdx]
+        RepeatBtn.Image = state == "One" and IMG.RepeatOne or IMG.Repeat
+        CreateTween({RepeatBtn, "ImageTransparency", state == "Off" and 0.6 or 0, 0.2})
+    end
+    UpdateRepeatUI()
+
+    ------------------------------------------------------------------
+    -- MOTOR DO PLAYER
+    ------------------------------------------------------------------
+    local gen, handledGen = 0, -1
+    local startClock, pausedAt, pausedTotal = 0, nil, 0
+
+    local function KillSound()
+        if endConn then endConn:Disconnect() endConn = nil end
+        if Snd then
+            local old = Snd
+            Snd = nil
+            pcall(function() old:Stop() old:Destroy() end)
+        end
+    end
+    ScreenGui.Destroying:Connect(KillSound)
+
+    local function FindIndex(id)
+        for i, t in ipairs(tracks) do
+            if t.id == id then return i end
+        end
+    end
+
+    local PlayTrack, StopPlayer, PausePlayer, ResumePlayer, HandleEnd
+
+    local function NewSound(id, myGen)
+        KillSound()
+        local s = Instance.new("Sound")
+        s.Name = "SAGAZ_MusicPlayer"
+        s.Looped = false
+        s.SoundId = "rbxassetid://" .. id
+        s.Volume = isLocal and (volume / 100) or 0
+        s.Parent = SoundService
+        Snd = s
+        endConn = s.Ended:Connect(function()
+            if myGen == gen then HandleEnd(myGen) end
+        end)
+        s:Play()
+    end
+
+    PlayTrack = function(id, name, replay)
+        id = CleanId(id)
+        if id == "" then return end
+
+        local idx = FindIndex(id)
+        if not name then
+            name = idx and tracks[idx].name or ("Musica " .. id)
+        end
+
+        gen = gen + 1
+        local myGen = gen
+
+        current = {id = id, name = name}
+        TitleLabel.Text = name
+        ArtistLabel.Text = "ID: " .. id
+
+        NewSound(id, myGen)
+
+        playing, stopped = true, false
+        startClock, pausedAt, pausedTotal = os.clock(), nil, 0
+        UpdatePlayIcon()
+        UpdateProgress(0, 0)
+
+        if not isLocal then
+            if replay then
+                -- mesmo ID de novo: para e toca de novo pra reiniciar no servidor
+                fire("RemoteStop")
+                task.delay(0.5, function()
+                    if gen == myGen and not isLocal and not stopped then
+                        fire("RemotePlay", id)
+                    end
+                end)
+            else
+                fire("RemotePlay", id)
+            end
+        end
+        fire("OnPlay", id, name)
+    end
+
+    StopPlayer = function(skipRemote)
+        gen = gen + 1
+        KillSound()
+        playing, stopped = false, true
+        UpdatePlayIcon()
+        UpdateProgress(0, 0)
+        if not isLocal and not skipRemote then fire("RemoteStop") end
+        fire("OnStop")
+    end
+
+    PausePlayer = function()
+        if not current or stopped or not playing then return end
+        if Snd then Snd:Pause() end
+        pausedAt = os.clock()
+        playing = false
+        UpdatePlayIcon()
+        if not isLocal then fire("RemotePause") end
+        fire("OnPause")
+    end
+
+    ResumePlayer = function()
+        if not current or stopped or playing then return end
+        if Snd then Snd:Resume() end
+        if pausedAt then pausedTotal = pausedTotal + (os.clock() - pausedAt) pausedAt = nil end
+        playing = true
+        UpdatePlayIcon()
+        if not isLocal then fire("RemoteResume") end
+        fire("OnPlay", current.id, current.name)
+    end
+
+    local function TogglePlay()
+        if playing then
+            PausePlayer()
+        elseif current and not stopped then
+            ResumePlayer()
+        elseif current then
+            PlayTrack(current.id, current.name)
+        elseif tracks[1] then
+            PlayTrack(tracks[1].id, tracks[1].name)
+        end
+    end
+
+    local function NextTrack()
+        if #tracks == 0 then return end
+        local idx = current and FindIndex(current.id) or 0
+        local t = tracks[(idx or 0) % #tracks + 1]
+        PlayTrack(t.id, t.name)
+        fire("OnNext")
+    end
+
+    local function PrevTrack()
+        if #tracks == 0 then
+            if current then PlayTrack(current.id, current.name) end
+            return
+        end
+        local idx = current and FindIndex(current.id)
+        local t = idx and tracks[(idx - 2) % #tracks + 1] or tracks[#tracks]
+        PlayTrack(t.id, t.name)
+        fire("OnPrevious")
+    end
+
+    -- fim da musica (Ended ou plano B do Heartbeat; so roda 1x por musica)
+    HandleEnd = function(myGen)
+        if myGen ~= gen or handledGen == myGen or not current then return end
+        handledGen = myGen
+
+        local rep = RepeatStates[repeatIdx]
+        if rep == "One" then
+            PlayTrack(current.id, current.name, true)
+            return
+        end
+
+        local idx = FindIndex(current.id)
+        if idx and idx < #tracks then
+            local t = tracks[idx + 1]
+            PlayTrack(t.id, t.name)
+        elseif rep == "All" then
+            if idx and #tracks > 0 then
+                local t = tracks[1]
+                PlayTrack(t.id, t.name, t.id == current.id)
+            else
+                PlayTrack(current.id, current.name, true)
+            end
+        else
+            StopPlayer(true)
+        end
+    end
+
+    ApplyMode = function(newLocal)
+        newLocal = newLocal == true
+        if newLocal == isLocal then return end
+
+        local wasActive = current ~= nil and not stopped
+        if not isLocal and current then fire("RemoteStop") end -- saindo do remote
+
+        isLocal = newLocal
+        UpdateModeUI()
+        ApplyVolume()
+
+        if wasActive then
+            if playing then
+                PlayTrack(current.id, current.name) -- recomeca no novo modo
+            else
+                StopPlayer(true)
+            end
+        end
+        fire("OnModeChanged", isLocal)
+    end
+
+    -- atualiza barra e contador
+    table.insert(conns, Track(RunService.Heartbeat:Connect(function()
+        if not current or stopped or not Snd then return end
+
+        local len = Snd.TimeLength
+        if len > 0 then
+            UpdateProgress(Snd.TimePosition, len)
+            if playing and Snd.TimePosition >= len - 0.05 then
+                HandleEnd(gen)
+            end
+        elseif not (ProgState and ProgState.dragging) then
+            -- audio ainda carregando / nao carregou: conta o tempo
+            local el = (pausedAt or os.clock()) - startClock - pausedTotal
+            CurTime.Text = FormatTime(el)
+        end
+    end)))
+
+    -- seek (so no modo local; no remote nao da pra pular)
+    ProgState = BindBar(ProgHolder, ProgBar,
+        function(f)
+            SetProgVisual(f)
+            CurTime.Text = FormatTime(f * duration)
+        end,
+        function(f)
+            if isLocal and Snd and current and not stopped and duration > 0 then
+                Snd.TimePosition = f * duration
+                fire("OnSeek", f * duration)
+            end
+        end
+    )
+
+    PlayBtn.Activated:Connect(TogglePlay)
+    PrevBtn.Activated:Connect(PrevTrack)
+    NextBtn.Activated:Connect(NextTrack)
+    StopBtn.Activated:Connect(function() StopPlayer() end)
+    RepeatBtn.Activated:Connect(function()
+        repeatIdx = repeatIdx % #RepeatStates + 1
+        UpdateRepeatUI()
+        fire("OnRepeat", RepeatStates[repeatIdx])
+    end)
+
+    UpdateProgress(0, 0)
+
+    ------------------------------------------------------------------
+    -- API
+    ------------------------------------------------------------------
+    local MusicPlayer = {}
+    function MusicPlayer:Play(id, name) PlayTrack(id, name) end
+    function MusicPlayer:Stop() StopPlayer() end
+    function MusicPlayer:Pause() PausePlayer() end
+    function MusicPlayer:Resume() ResumePlayer() end
+    function MusicPlayer:Toggle() TogglePlay() end
+    function MusicPlayer:Next() NextTrack() end
+    function MusicPlayer:Previous() PrevTrack() end
+
+    function MusicPlayer:AddTrack(name, id)
+        id = CleanId(id)
+        if id == "" or FindIndex(id) then return end
+        table.insert(tracks, {id = id, name = tostring(name or ("Musica " .. id))})
+    end
+    function MusicPlayer:ClearTracks() table.clear(tracks) end
+
+    function MusicPlayer:SetLocal(v) ApplyMode(v) end
+    function MusicPlayer:SetMode(m)
+        local v = ParseMode(m)
+        if v ~= nil then ApplyMode(v) end
+    end
+    function MusicPlayer:GetMode() return isLocal and "Local" or "Remote" end
+    function MusicPlayer:IsLocal() return isLocal end
+    function MusicPlayer:IsLocked() return locked end
+
+    function MusicPlayer:SetVolume(v)
+        SetVolume(v)
+        if not isLocal then fire("RemoteVolume", volume) end
+    end
+    function MusicPlayer:GetVolume() return volume end
+
+    function MusicPlayer:SetTitle(t) TitleLabel.Text = tostring(GetStr(t) or "") end
+    function MusicPlayer:SetArtist(t) ArtistLabel.Text = tostring(GetStr(t) or "") end
+    function MusicPlayer:SetRepeat(state)
+        local idx = table.find(RepeatStates, state)
+        if idx then repeatIdx = idx UpdateRepeatUI() end
+    end
+    function MusicPlayer:GetRepeat() return RepeatStates[repeatIdx] end
+    function MusicPlayer:IsPlaying() return playing end
+    function MusicPlayer:Visible(...) Funcs:ToggleVisible(Frame, ...) end
+        function MusicPlayer:Destroy()
+        for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+        KillSound()
+        Frame:Destroy()
+    end
+
+    return MusicPlayer
+end
+
         function Tab:AddButton(Cfg)
             local BName = Cfg[1] or Cfg.Name or Cfg.Title or "Button!"
             local BDescription = Cfg.Desc or Cfg.Description or ""
