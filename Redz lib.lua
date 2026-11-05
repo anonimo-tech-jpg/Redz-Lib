@@ -3436,6 +3436,26 @@ end
         local Min, Max = MinV / Increase, MaxV / Increase
 
         local Button, LabelFunc, TitleLabel, SliderHolder, SliderBar, SetValueText
+        local MinusBtn, PlusBtn
+
+        -- cria um botao de passo (+ / -)
+        local function MakeStepButton(Parent, Text, Size, Position, Anchor)
+            local Btn = InsertTheme(Create("TextButton", Parent, {
+                Size = Size,
+                Position = Position,
+                AnchorPoint = Anchor or Vector2.new(0, 0),
+                AutoButtonColor = false,
+                BackgroundColor3 = Theme["Color Stroke"],
+                Font = MyLibrary.CurrentFont,
+                Text = Text,
+                TextColor3 = Theme["Color Text"],
+                TextSize = 14,
+                Name = "Step" .. Text
+            }), "Stroke")
+            AddTransparency(Btn)
+            Make("Corner", Btn, UDim.new(0, 4))
+            return Btn
+        end
 
         if Stacked then
             Button = InsertTheme(Create("Frame", Container, {
@@ -3472,9 +3492,21 @@ end
             }), "Theme")
             SetValueText = function(text) ValueLabel.Text = text end
 
+            -- botao "-" na esquerda
+            MinusBtn = MakeStepButton(Button, "-",
+                UDim2.new(0, 22, 0, 22),
+                UDim2.new(0, 10, 0, 22))
+
+            -- botao "+" na direita
+            PlusBtn = MakeStepButton(Button, "+",
+                UDim2.new(0, 22, 0, 22),
+                UDim2.new(1, -10, 0, 22),
+                Vector2.new(1, 0))
+
+            -- area do slider entre os dois botoes
             SliderHolder = Create("TextButton", Button, {
-                Size = UDim2.new(1, -20, 0, 22),
-                Position = UDim2.new(0, 10, 0, 22),
+                Size = UDim2.new(1, -76, 0, 22),
+                Position = UDim2.new(0, 38, 0, 22),
                 AutoButtonColor = false,
                 Text = "",
                 BackgroundTransparency = 1
@@ -3482,17 +3514,35 @@ end
 
             SliderBar = InsertTheme(Create("Frame", SliderHolder, {
                 BackgroundColor3 = Theme["Color Stroke"],
-                Size = UDim2.new(1, 0, 0, 6),
+                Size = UDim2.new(1, -6, 0, 6),
                 Position = UDim2.new(0.5, 0, 0.5),
                 AnchorPoint = Vector2.new(0.5, 0.5)
             }), "Stroke")
         else
             Button, LabelFunc = ButtonFrame(Container, SName, SDesc, UDim2.new(1, -180))
 
-            SliderHolder = Create("TextButton", Button, {
+            -- area que agrupa: [-] [slider] [+]
+            local SliderArea = Create("Frame", Button, {
                 Size = UDim2.new(0.45, 0, 1),
                 Position = UDim2.new(1),
                 AnchorPoint = Vector2.new(1, 0),
+                BackgroundTransparency = 1,
+                Name = "SliderArea"
+            })
+
+            MinusBtn = MakeStepButton(SliderArea, "-",
+                UDim2.new(0, 20, 0, 20),
+                UDim2.new(0, 0, 0.5, 0),
+                Vector2.new(0, 0.5))
+
+            PlusBtn = MakeStepButton(SliderArea, "+",
+                UDim2.new(0, 20, 0, 20),
+                UDim2.new(1, 0, 0.5, 0),
+                Vector2.new(1, 0.5))
+
+            SliderHolder = Create("TextButton", SliderArea, {
+                Size = UDim2.new(1, -52, 1, 0),
+                Position = UDim2.new(0, 26, 0, 0),
                 AutoButtonColor = false,
                 Text = "",
                 BackgroundTransparency = 1
@@ -3500,15 +3550,16 @@ end
 
             SliderBar = InsertTheme(Create("Frame", SliderHolder, {
                 BackgroundColor3 = Theme["Color Stroke"],
-                Size = UDim2.new(1, -20, 0, 6),
+                Size = UDim2.new(1, -10, 0, 6),
                 Position = UDim2.new(0.5, 0, 0.5),
                 AnchorPoint = Vector2.new(0.5, 0.5)
             }), "Stroke")
 
-            local LabelVal = InsertTheme(Create("TextLabel", SliderHolder, {
+            -- valor fica a esquerda do botao "-"
+            local LabelVal = InsertTheme(Create("TextLabel", SliderArea, {
                 Size = UDim2.new(0, 14, 0, 14),
                 AnchorPoint = Vector2.new(1, 0.5),
-                Position = UDim2.new(0, 0, 0.5),
+                Position = UDim2.new(0, -4, 0.5),
                 BackgroundTransparency = 1,
                 TextColor3 = Theme["Color Text"],
                 Font = MyLibrary.CurrentFont,
@@ -3550,6 +3601,7 @@ end
         Make("Corner", SliderIcon)
 
         local LastValue
+        local Target = Default -- valor alvo (usado pelos botoes + e -)
 
         local function UpdateValues()
             Indicator.Size = UDim2.new(SliderIcon.Position.X.Scale, 0, 1, 0)
@@ -3564,6 +3616,8 @@ end
 
         local function SetSlider(NewValue, Instant)
             if type(NewValue) ~= "number" then return end
+            NewValue = math.clamp(NewValue, MinV, MaxV)
+            Target = NewValue
             local range = MaxV - MinV
             local pos = range ~= 0 and math.clamp((NewValue - MinV) / range, 0, 1) or 0
             SetFlag(Flag, NewValue)
@@ -3571,14 +3625,42 @@ end
             if Instant then
                 SliderIcon.Position = target
             else
-                CreateTween({SliderIcon, "Position", target, 0.3})
+                CreateTween({SliderIcon, "Position", target, 0.15})
             end
         end
 
         SliderIcon:GetPropertyChangedSignal("Position"):Connect(UpdateValues)
         BindSlider(SliderHolder, SliderBar, SliderIcon, Container, function()
+            Target = Default
             SetFlag(Flag, Default)
         end)
+
+        -- logica dos botoes + e - (clique e segurar para repetir)
+        local function Step(Dir)
+            local NewValue = math.floor((Target + Dir * Increase) * 10000 + 0.5) / 10000
+            SetSlider(NewValue)
+        end
+
+        local function BindStep(Btn, Dir)
+            local Holding = false
+            Btn.MouseButton1Down:Connect(function()
+                Holding = true
+                Step(Dir)
+                task.spawn(function()
+                    task.wait(0.4)
+                    while Holding do
+                        Step(Dir)
+                        task.wait(0.07)
+                    end
+                end)
+            end)
+            local function Stop() Holding = false end
+            Btn.MouseButton1Up:Connect(Stop)
+            Btn.MouseLeave:Connect(Stop)
+        end
+
+        BindStep(MinusBtn, -1)
+        BindStep(PlusBtn, 1)
 
         SetSlider(Default, true)
         UpdateValues()
@@ -3605,6 +3687,7 @@ end
         function Slider:Destroy() Button:Destroy() end
         return Slider
     end
+
 
     ------------------------------------------------------------------
     -- TEXTBOX
