@@ -5439,11 +5439,7 @@ function MyLibrary:MakeWindow(Configs)
             function DiscordInvite:Visible(...) Funcs:ToggleVisible(InviteHolder, ...) end
             return DiscordInvite
         end
-    end
 
-        ------------------------------------------------------------------
-        -- LISTA DE PLAYERS (Protegido / Desprotegido)
-        ------------------------------------------------------------------
         function Tab:AddPlayerList(Cfg2)
             Cfg2 = Cfg2 or {}
             local LTitle = Cfg2.Name or Cfg2.Title or Cfg2[1] or "Lista de Players"
@@ -5751,6 +5747,10 @@ function MyLibrary:MakeWindow(Configs)
 
             return PlayerList
         end
+
+
+    end
+
 
 
     ------------------------------------------------------------------
