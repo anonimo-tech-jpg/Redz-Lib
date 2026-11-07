@@ -5441,6 +5441,318 @@ function MyLibrary:MakeWindow(Configs)
         end
     end
 
+        ------------------------------------------------------------------
+        -- LISTA DE PLAYERS (Protegido / Desprotegido)
+        ------------------------------------------------------------------
+        function Tab:AddPlayerList(Cfg2)
+            Cfg2 = Cfg2 or {}
+            local LTitle = Cfg2.Name or Cfg2.Title or Cfg2[1] or "Lista de Players"
+            local LocalPlayer = Players.LocalPlayer
+            local DefaultProtected = Cfg2.DefaultProtected == true
+            local OnChange = Cfg2.Callback or Cfg2.OnChange
+
+            -- Tabelas do script principal (nome -> true). Se nao passar, a lib cria.
+            local ProtectedTbl = Cfg2.Protected or {}
+            local UnprotectedTbl = Cfg2.Unprotected or {}
+
+            local PROTECTED_COLOR = Color3.fromRGB(46, 170, 80)
+            local UNPROTECTED_COLOR = Color3.fromRGB(200, 45, 45)
+            local ROW_HEIGHT = 40
+            local LIST_HEIGHT = 150
+
+            -- estado salvo por nome (continua salvo se o player sair e voltar)
+            local States = {}
+            for name, v in pairs(UnprotectedTbl) do if v then States[name] = false end end
+            for name, v in pairs(ProtectedTbl) do if v then States[name] = true end end
+
+            local Rows = {}
+
+            local function Commit(name, state)
+                States[name] = state
+                ProtectedTbl[name] = state and true or nil
+                UnprotectedTbl[name] = (not state) and true or nil
+            end
+
+            ------------------------------------------------------------------
+            -- QUADRO
+            ------------------------------------------------------------------
+            local Frame = InsertTheme(Create("Frame", Container, {
+                Size = UDim2.new(1, 0, 0, 62 + LIST_HEIGHT),
+                BackgroundColor3 = Theme["Color Hub 2"],
+                Name = "Option"
+            }), "Frame")
+            AddTransparency(Frame)
+            Make("Corner", Frame, UDim.new(0, 6))
+            ApplyBorder(Frame)
+
+            InsertTheme(Create("TextLabel", Frame, {
+                Size = UDim2.new(1, -20, 0, 16),
+                Position = UDim2.new(0, 10, 0, 6),
+                BackgroundTransparency = 1,
+                Font = MyLibrary.CurrentFont,
+                Text = LTitle,
+                TextColor3 = Theme["Color Text"],
+                TextSize = 11,
+                TextXAlignment = "Left",
+                TextTruncate = "AtEnd"
+            }), "Text")
+
+            -- caixa de pesquisa
+            local SearchHolder = InsertTheme(Create("Frame", Frame, {
+                Size = UDim2.new(1, -20, 0, 24),
+                Position = UDim2.new(0, 10, 0, 28),
+                BackgroundColor3 = Theme["Color Stroke"]
+            }), "Stroke")
+            AddTransparency(SearchHolder)
+            Make("Corner", SearchHolder, UDim.new(0, 4))
+            ApplyBorder(SearchHolder)
+
+            local SearchBox = InsertTheme(Create("TextBox", SearchHolder, {
+                Size = UDim2.new(1, -16, 1, 0),
+                Position = UDim2.new(0, 8, 0, 0),
+                BackgroundTransparency = 1,
+                Font = MyLibrary.CurrentFont,
+                TextSize = 11,
+                TextColor3 = Theme["Color Text"],
+                PlaceholderText = "Pesquisar player...",
+                PlaceholderColor3 = Theme["Color Dark Text"],
+                ClearTextOnFocus = false,
+                Text = "",
+                TextXAlignment = "Left"
+            }), "Text")
+
+            -- lista
+            local ScrollFrame = InsertTheme(Create("ScrollingFrame", Frame, {
+                Size = UDim2.new(1, -12, 0, LIST_HEIGHT),
+                Position = UDim2.new(0, 6, 0, 58),
+                ScrollBarImageColor3 = Theme["Color Theme"],
+                ScrollBarThickness = 1.5,
+                BackgroundTransparency = 1,
+                BorderSizePixel = 0,
+                CanvasSize = UDim2.new(),
+                AutomaticCanvasSize = "Y",
+                ScrollingDirection = "Y",
+                Active = true
+            }, {
+                Create("UIPadding", {
+                    PaddingLeft = UDim.new(0, 2),
+                    PaddingRight = UDim.new(0, 4),
+                    PaddingTop = UDim.new(0, 2),
+                    PaddingBottom = UDim.new(0, 4)
+                }),
+                Create("UIListLayout", {
+                    Padding = UDim.new(0, 4),
+                    SortOrder = Enum.SortOrder.LayoutOrder
+                })
+            }), "ScrollBar")
+
+            ------------------------------------------------------------------
+            -- LINHAS
+            ------------------------------------------------------------------
+            local function ApplyFilter()
+                local query = string.lower(SearchBox.Text)
+                for _, entry in pairs(Rows) do
+                    entry.Row.Visible = query == ""
+                        or string.find(string.lower(entry.Name), query, 1, true) ~= nil
+                        or string.find(string.lower(entry.Display), query, 1, true) ~= nil
+                end
+            end
+
+            local function UpdateButton(entry)
+                local protected = States[entry.Name] == true
+                entry.Btn.Text = protected and "Protegido" or "Desprotegido"
+                CreateTween({entry.Btn, "BackgroundColor3", protected and PROTECTED_COLOR or UNPROTECTED_COLOR, 0.2})
+            end
+
+            local function SetState(name, state, silent)
+                state = state == true
+                if States[name] == state and Rows[name] == nil then
+                    Commit(name, state)
+                    return
+                end
+                Commit(name, state)
+                local entry = Rows[name]
+                if entry then UpdateButton(entry) end
+                if not silent and type(OnChange) == "function" then
+                    task.spawn(OnChange, name, state, Players:FindFirstChild(name))
+                end
+            end
+
+            local function RemoveRow(name)
+                local entry = Rows[name]
+                if entry then
+                    entry.Row:Destroy()
+                    Rows[name] = nil
+                end
+                -- o estado continua salvo em States / nas tabelas
+            end
+
+            local function AddRow(plr)
+                local name = plr.Name
+                if Rows[name] or plr == LocalPlayer then return end
+
+                -- estado salvo (se ja esteve na lista) ou padrao
+                if States[name] == nil then
+                    Commit(name, DefaultProtected)
+                else
+                    Commit(name, States[name])
+                end
+
+                local Row = Make("Button", ScrollFrame, {
+                    Name = "PlayerRow",
+                    Size = UDim2.new(1, 0, 0, ROW_HEIGHT),
+                    LayoutOrder = 2
+                })
+                Make("Corner", Row, UDim.new(0, 5))
+
+                local Avatar = Create("ImageLabel", Row, {
+                    Size = UDim2.fromOffset(30, 30),
+                    Position = UDim2.new(0, 6, 0.5, 0),
+                    AnchorPoint = Vector2.new(0, 0.5),
+                    BackgroundTransparency = 1,
+                    Image = ""
+                })
+                Make("Corner", Avatar, UDim.new(0.5, 0))
+
+                task.spawn(function()
+                    pcall(function()
+                        local content, ready = Players:GetUserThumbnailAsync(
+                            plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+                        if ready then Avatar.Image = content end
+                    end)
+                end)
+
+                local DisplayLabel = InsertTheme(Create("TextLabel", Row, {
+                    Size = UDim2.new(1, -156, 0, 16),
+                    Position = UDim2.new(0, 42, 0, 5),
+                    BackgroundTransparency = 1,
+                    Text = plr.DisplayName,
+                    TextColor3 = Theme["Color Text"],
+                    Font = MyLibrary.CurrentFont,
+                    TextSize = 12,
+                    TextXAlignment = "Left",
+                    TextTruncate = "AtEnd"
+                }), "Text")
+
+                InsertTheme(Create("TextLabel", Row, {
+                    Size = UDim2.new(1, -156, 0, 12),
+                    Position = UDim2.new(0, 42, 0, 22),
+                    BackgroundTransparency = 1,
+                    Text = "@" .. name,
+                    TextColor3 = Theme["Color Dark Text"],
+                    Font = MyLibrary.CurrentFont,
+                    TextSize = 10,
+                    TextXAlignment = "Left",
+                    TextTruncate = "AtEnd"
+                }), "DarkText")
+
+                -- botao Protegido / Desprotegido (cores de estado: verde / vermelho)
+                local Btn = Create("TextButton", Row, {
+                    Size = UDim2.new(0, 98, 0, 24),
+                    Position = UDim2.new(1, -6, 0.5, 0),
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    BackgroundColor3 = UNPROTECTED_COLOR,
+                    AutoButtonColor = false,
+                    Text = "Desprotegido",
+                    TextColor3 = Color3.fromRGB(255, 255, 255),
+                    Font = MyLibrary.CurrentFont,
+                    TextSize = 10
+                })
+                Make("Corner", Btn, UDim.new(0, 5))
+                ApplyBorder(Btn)
+
+                local entry = {
+                    Name = name,
+                    Display = plr.DisplayName,
+                    Row = Row,
+                    Btn = Btn,
+                    IsFriend = false
+                }
+                Rows[name] = entry
+
+                Btn.BackgroundColor3 = States[name] and PROTECTED_COLOR or UNPROTECTED_COLOR
+                Btn.Text = States[name] and "Protegido" or "Desprotegido"
+
+                Btn.Activated:Connect(function()
+                    SetState(name, not (States[name] == true))
+                end)
+
+                -- amigos ficam fixados no topo
+                task.spawn(function()
+                    local ok, isFriend = pcall(function()
+                        return LocalPlayer:IsFriendsWith(plr.UserId)
+                    end)
+                    if ok and isFriend and Row.Parent then
+                        entry.IsFriend = true
+                        Row.LayoutOrder = 1
+                        DisplayLabel.Text = plr.DisplayName .. " -AMG"
+                    end
+                end)
+
+                ApplyFilter()
+            end
+
+            local function RefreshAll()
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer then AddRow(plr) end
+                end
+                for name in pairs(Rows) do
+                    if not Players:FindFirstChild(name) then RemoveRow(name) end
+                end
+            end
+
+            SearchBox:GetPropertyChangedSignal("Text"):Connect(ApplyFilter)
+
+            -- atualiza sozinho quando alguem entra ou sai
+            local c1 = Track(Players.PlayerAdded:Connect(function(plr)
+                task.wait(0.3)
+                AddRow(plr)
+            end))
+            local c2 = Track(Players.PlayerRemoving:Connect(function(plr)
+                RemoveRow(plr.Name)
+            end))
+
+            RefreshAll()
+
+            ------------------------------------------------------------------
+            -- API
+            ------------------------------------------------------------------
+            local PlayerList = {}
+            PlayerList.Protected = ProtectedTbl
+            PlayerList.Unprotected = UnprotectedTbl
+
+            function PlayerList:IsProtected(name) return States[name] == true end
+            function PlayerList:SetProtected(name, state) SetState(name, state) end
+            function PlayerList:Toggle(name) SetState(name, not (States[name] == true)) end
+
+            -- listas so com quem esta no servidor agora
+            function PlayerList:GetProtected()
+                local list = {}
+                for name in pairs(Rows) do
+                    if States[name] == true then table.insert(list, name) end
+                end
+                return list
+            end
+            function PlayerList:GetUnprotected()
+                local list = {}
+                for name in pairs(Rows) do
+                    if States[name] ~= true then table.insert(list, name) end
+                end
+                return list
+            end
+
+            function PlayerList:Refresh() RefreshAll() end
+            function PlayerList:Visible(...) Funcs:ToggleVisible(Frame, ...) end
+            function PlayerList:Destroy()
+                c1:Disconnect()
+                c2:Disconnect()
+                Frame:Destroy()
+            end
+
+            return PlayerList
+        end
+
+
     ------------------------------------------------------------------
     -- ABAS DA JANELA SECUNDARIA
     ------------------------------------------------------------------
